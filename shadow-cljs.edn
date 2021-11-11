@@ -1,0 +1,26 @@
+{:deps true
+ :builds {:app {:target :browser
+                :output-dir "public/js"
+                :asset-path "js"
+
+                :modules
+                {:app
+                 {:init-fn refactory.app/init}}
+
+                :dev
+                {:compiler-options
+                 {:closure-defines
+                  {re-frame.trace.trace-enabled? true
+                   day8.re-frame.tracing.trace-enabled? true}}}
+
+                :release
+                {:build-options
+                 {:ns-aliases
+                  {day8.re-frame.tracing day8.re-frame.tracing-stubs}}}
+
+                :devtools
+                {:preloads [day8.re-frame-10x.preload]
+                 :watch-dir "public"
+                 :watch-path "/"}}}
+
+ :dev-http {8000 "public"}}

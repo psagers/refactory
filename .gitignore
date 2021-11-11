@@ -1,0 +1,9 @@
+# Clojure(Script) dev artifacts
+.clj-kondo/
+.cpcache/
+.nrepl-port
+.shadow-cljs/
+cljs-runtime/
+
+# npm
+/node_modules/

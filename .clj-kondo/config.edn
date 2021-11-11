@@ -1,0 +1,25 @@
+{:linters
+ {:shadowed-var
+  {:level :warning
+   :suggest {name nom}}
+
+  :unsorted-required-namespace
+  {:level :warning}
+
+  :unresolved-symbol
+  {:exclude [(meander.epsilon/search)
+             (meander.epsilon/match)
+             (meander.epsilon/find)]}
+
+  :refer-all
+  {:exclude [blancas.kern.core]}}
+
+ :lint-as
+ {com.rpl.specter/defcollector clojure.core/defn
+  com.rpl.specter/defdynamicnav clojure.core/defn
+  com.rpl.specter/defmacroalias clojure.core/def
+  com.rpl.specter/defnav clojure.core/defn
+  com.rpl.specter/defrichnav clojure.core/defn
+  meander.epsilon/defsyntax clojure.core/defmacro
+  reagent.core/with-let clojure.core/let
+  refactory.app.util/forall clojure.core/for}}

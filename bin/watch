@@ -1,0 +1,30 @@
+#!/bin/sh 
+
+
+if test "$1" = "stop"; then
+    tmux send -t 1 C-c
+    tmux send -t 0 C-c
+
+    sleep 2
+
+    tmux send -t 1 C-d
+    tmux send -t 0 C-d
+
+    sleep 2
+
+    if tmux has-session -t refactory; then
+        tmux kill-session -t refactory
+    fi
+else
+    tmux new-session -s refactory -d
+    tmux split-window
+
+    sleep 1
+
+    tmux send -t 0 'clojure -M:dev:cljs watch app' C-m
+    tmux send -t 1 'bin/brunch watch' C-m
+
+    tmux select-pane -t 0
+
+    tmux attach \; select-layout main-vertical
+fi
