@@ -102,6 +102,11 @@
      :description ?description}))
 
 
+(defn normalize-recipe-display
+  [display]
+  (str/replace display #"^Alternate: (.*)" "$1"))
+
+
 (defn- docs->recipes
   "Extracs relevant recipes from Docs.json.
 
@@ -113,7 +118,7 @@
       docs
 
       (m/scan {"Classes" (m/scan {"ClassName" ?class-name
-                                  "mDisplayName" ?display-name
+                                  "mDisplayName" (m/app normalize-recipe-display ?display-name)
                                   "mIngredients" (m/some (m/app ->ingredients ?ingredients))
                                   "mProduct" (m/some (m/app ->ingredients ?products))
                                   "mManufactoringDuration" (m/app parse-double ?duration)
@@ -126,7 +131,6 @@
        :output ?products
        :duration ?duration
        :builder-id ?builder-id})))
-
 
 
 (defn- recipes->item-ids
