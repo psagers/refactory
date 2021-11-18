@@ -76,6 +76,14 @@
     (tap> (vec datom))))
 
 
+;;
+;; Persistence
+;;
+;; On save, we use DataScript's serialization to store the entire database,
+;; including the schema and indexes. On load, we deserialize the database and
+;; then extract the datoms and combine them with the latest schema
+;;
+
 (def STORAGE-KEY "autosave")
 
 
@@ -90,10 +98,14 @@
 (defn- create-conn-from-storage
   []
   (when-some [data (. js/window.localStorage getItem STORAGE-KEY)]
-    (-> data
-        (js/JSON.parse)
-        (ds/from-serializable)
-        (ds/conn-from-db))))
+    (try
+      (-> data
+          (js/JSON.parse)
+          (ds/from-serializable)
+          (ds/datoms :eavt)
+          (ds/conn-from-datoms ds-schema))
+      (catch js/Error e
+        (js/console.warn "Failed to load saved database." e)))))
 
 
 (def save-soon (debounce #(rf/dispatch [::save]) 2500))
@@ -136,6 +148,10 @@
   (fn [db _]
     (::dirty? db)))
 
+
+;;
+;; Transactions
+;;
 
 (defn tap-ds
   []
