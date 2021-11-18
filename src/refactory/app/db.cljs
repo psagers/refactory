@@ -1,7 +1,106 @@
 (ns refactory.app.db
-  (:require [malli.core :as m]
-            [malli.error :as me]))
+  (:require [datascript.core :as ds]
+            [malli.core :as m]
+            [malli.error :as me]
+            [posh.reagent]
+            [re-frame.core :as rf]
+            [re-posh.core :as rp]
+            [re-posh.db]))
 
+
+;;
+;; DataScript
+;;
+
+(defonce ds-schema (atom {}))
+
+
+(defn register-ds-schema!
+  "Registers a (partial) DataScript schema.
+
+  Namespaces should call this at load time to register their attributes. The
+  argument will be merged with other registrations to form the full schema
+  passed to datascript.core/create-conn."
+  [schema]
+  (when (nil? @re-posh.db/store)
+    (when-some [conflicts (not-empty (filter (partial contains? @ds-schema) (keys schema)))]
+      (js/console.warn "Overwriting schema attributes:" (pr-str conflicts))))
+
+  (swap! ds-schema merge schema))
+
+
+(defn attr->malli-schema
+  [attr]
+  (get-in @ds-schema [attr :valid/malli]))
+
+
+(defn- validate-tx-report
+  [{:keys [tx-data]}]
+  (doseq [[eid attr value _timestamp added?] tx-data]
+    (when added?
+      (when-some [schema (attr->malli-schema attr)]
+        (when-not (m/validate schema value)
+          (doseq [msg (me/humanize (m/explain schema value))]
+            (js/console.warn (pr-str [eid attr value]) "- value" msg)))))))
+
+
+(defn- tap-datoms
+  [{:keys [tx-data]}]
+  (doseq [datom tx-data]
+    (tap> (vec datom))))
+
+
+(defn init
+  []
+  (let [conn (ds/create-conn @ds-schema)]
+    (rp/connect! conn)
+
+    (when ^boolean goog.DEBUG
+      (ds/listen! conn validate-tx-report)
+      (ds/listen! conn tap-datoms))
+
+    conn))
+
+
+(defn ds
+  []
+  @@re-posh.db/store)
+
+
+(defn tap-ds
+  []
+  (tap> (mapv (comp ds/touch (partial ds/entity (ds)))
+              (ds/q '[:find [?e ...] :where [?e]] (ds)))))
+
+
+(comment
+  (tap-ds))
+
+
+(defn transact!
+  "Convenience wrapper."
+  ([datoms]
+   (transact! datoms nil))
+  ([datoms tx-meta]
+   (posh.reagent/transact! @re-posh.db/store datoms tx-meta)))
+
+
+(rf/reg-fx
+  :transact+
+  (fn [{:keys [datoms tx-meta on-success on-fail]}]
+    (let [result (try (transact! datoms tx-meta)
+                      (catch js/Error e e))]
+      (if (instance? js/Error result)
+        (if (vector? on-fail)
+          (rf/dispatch (conj on-fail result))
+          (throw result))
+        (when (vector? on-success)
+          (rf/dispatch (conj on-success result)))))))
+
+
+;;
+;; app-db
+;;
 
 (defonce db-schema (atom {:src {}}))
 

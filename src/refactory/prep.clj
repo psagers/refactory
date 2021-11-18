@@ -41,7 +41,7 @@
                           :option "out"
                           :short 1
                           :type :string
-                          :default "public/game.json"}]
+                          :default "app/assets/game.json"}]
                   :runs run-game-data}
 
                  {:command "icons"
@@ -50,7 +50,7 @@
                           :option "in"
                           :short 0
                           :type :string
-                          :default "public/game.json"}
+                          :default "app/assets/game.json"}
                          {:as "Path prefix for output"
                           :option "prefix"
                           :short "p"
@@ -70,4 +70,4 @@
 
 (comment
   (with-open [docs (io/reader "docs.json")]
-    (docs/parse docs)))
+    (docs/process docs)))

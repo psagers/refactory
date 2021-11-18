@@ -7,3 +7,6 @@ cljs-runtime/
 
 # npm
 /node_modules/
+
+# Build
+/public/

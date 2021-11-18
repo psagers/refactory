@@ -30,7 +30,7 @@
 
   This is the AWESOME shop points per minute produced by this recipe. It's a
   useful heuristic for sorting recipes from basic to advanced.
-  
+
   A few recipes have outputs without meaningful values, in which case we'll
   fall back to the value of the inputs."
   [id->item recipe]

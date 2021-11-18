@@ -42,3 +42,20 @@
    [content opts]
    (when close?
     [:button.modal-close.is-large {:on-click #(rf/dispatch [::hide modal-id])}])])
+
+
+;; Standard confirmation modal
+(defmethod content ::confirm-action
+  [{::keys [modal-id], :keys [title text button-label danger? on-confirm]}]
+  [:div.modal-card
+   [:header.modal-card-head {:class []}]
+    ;; [:p.modal-card-title title]]
+   [:section.modal-card-body
+    [:p text]]
+   [:footer.modal-card-foot.is-justify-content-end
+    [:button.button {:on-click #(rf/dispatch [::hide modal-id])}
+     "Cancel"]
+    [:button.button {:class [(if danger? "is-danger" "is-success")]
+                     :on-click #(do (rf/dispatch on-confirm)
+                                    (rf/dispatch [::hide modal-id]))}
+     button-label]]])

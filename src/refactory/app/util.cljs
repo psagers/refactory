@@ -1,4 +1,10 @@
-(ns refactory.app.util)
+(ns refactory.app.util
+  (:require-macros refactory.app.util))
+
+
+(defn with-places
+  [value places]
+  (js/parseFloat (.toFixed value places)))
 
 
 (defn per-minute
@@ -6,5 +12,24 @@
   [amount seconds]
   (-> (/ amount seconds)
       (* 60)
-      (.toFixed 2)
-      (js/parseFloat)))
+      (with-places 2)))
+
+
+(defn compare-by
+  "Turns a key function into a comparator."
+  [key-fn]
+  (fn [a b]
+    (compare (key-fn a) (key-fn b))))
+
+
+(defn keep-vals
+  "Transforms m by applying f to each value. Discards nils."
+  [f m]
+  (if (nil? m)
+    {}
+    (persistent! (reduce-kv (fn [m k v]
+                              (if-some [v* (f v)]
+                                (assoc! m k v*)
+                                m))
+                            (transient m)
+                            m))))

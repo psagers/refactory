@@ -4,9 +4,8 @@
             [re-frame.core :as rf]
             [reagent.core :as r]
             [refactory.app.game :as game]
-            [refactory.app.ui :as ui]
             [refactory.app.ui.modal :as modal]
-            [refactory.app.util :refer [per-minute] :refer-macros [forall]])
+            [refactory.app.util :refer [forall per-minute]])
   (:import [goog.async Debouncer]))
 
 
@@ -25,7 +24,9 @@
   ([item-id attrs]
    (let [item (game/id->item item-id)]
      [:div.icon attrs
-      [:img {:src (item->icon-path item)}]])))
+      [:img {:src (item->icon-path item)
+             :alt (:display item)
+             :title (:display item)}]])))
 
 
 (defn item-io
@@ -36,7 +37,9 @@
    (let [item (game/id->item item-id)]
      [:div.item-io
       [:div.item-io-content
-       [:img {:src (item->icon-path item)}]
+       [:img {:src (item->icon-path item)
+              :alt (:display item)
+              :title (:display item)}]
        (when amount
          [:span.amount amount])]])))
 
@@ -48,7 +51,7 @@
     [:div.recipe-io
      (forall [{:keys [item-id amount]} (:input recipe)]
        ^{:key item-id} [item-io item-id amount])
-     [:span.icon (ui/bi-icon "caret-right-fill")]
+     [:span.icon [:i.bi-caret-right-fill]]
      (forall [{:keys [item-id amount]} (:output recipe)]
        ^{:key item-id} [item-io item-id amount])]))
 
@@ -67,13 +70,16 @@
 ;; on-cancel if the modal is dismissed.
 (rf/reg-event-fx
   ::show-chooser
-  (fn [{:keys [db]} [_ {:keys [on-success on-cancel]}]]
-    {:db (assoc db ::chooser {:debouncer (Debouncer. fire-search 350 nil)
-                              :search-text ""  ;; The actual text in the search box
-                              :search-term ""  ;; The active (debounced) search term
-                              :on-success on-success
-                              :on-cancel on-cancel})
-     :fx [[:dispatch [::modal/show ::chooser {::modal/close? false}]]]}))
+  (fn [{:keys [db]} [_ {:keys [search-term on-success on-cancel]}]]
+    (let [search-term (str/lower-case (or search-term ""))]
+      {:db (assoc db ::chooser {:debouncer (Debouncer. fire-search 350 nil)
+                                ;; The actual text in the search box
+                                :search-text search-term
+                                ;; The active (debounced) search term
+                                :search-term search-term
+                                :on-success on-success
+                                :on-cancel on-cancel})
+       :fx [[:dispatch [::modal/show ::chooser {::modal/close? false}]]]})))
 
 
 ;; Closes the chooser, optionally with a result. recipe-id is the selected
@@ -84,7 +90,7 @@
     (let [{:keys [debouncer on-success on-cancel]} (::chooser db)]
       (when debouncer
         (.stop debouncer))
-      
+
       {:fx [[:dispatch [::modal/hide ::chooser]]
             [:dispatch [::reset-chooser]]
             (cond
@@ -185,9 +191,9 @@
   [:div.is-flex.is-align-content-center.mb-2
     [:a.is-flex-grow-1 {:on-click #(rf/dispatch [::chooser-expand-recipe recipe-id])}
      (recipe-io recipe-id)]
-    [:a.is-flex-grow-0.ml-5
+    [:a.is-flex-grow-0.ml-5.has-text-black
      [:span.icon.is-large {:on-click #(rf/dispatch [::finish-chooser recipe-id])}
-      (ui/bi-icon "file-plus")]]])
+      [:i.bi-file-plus]]]])
 
 
 (defn- io-details
@@ -226,7 +232,7 @@
       [:div.level-right
        [:button.button.is-success {:on-click #(rf/dispatch [::finish-chooser recipe-id])}
          [:span "Add"]
-         [:span.icon.is-small (ui/bi-icon "file-plus")]]]]]))
+         [:span.icon.is-small [:i.bi-file-plus]]]]]]))
 
 
 (defmethod modal/content ::chooser
@@ -241,7 +247,6 @@
        [:header.modal-card-head
         [:p.modal-card-title "Add a recipe"]
         [:button.delete {:on-click #(rf/dispatch [::finish-chooser nil])}]]
-
        [:section.modal-card-body
         [:div
          [:div.control.has-icons-right
@@ -252,8 +257,6 @@
           [:span.icon.is-right
            [:button.delete {:disabled (empty? search-text)
                             :on-click #(rf/dispatch [::set-search-text "" true])}]]]]
-          
-          
         [:hr.hr]
         [:div.is-flex.is-flex-direction-column
          (forall [recipe-id recipe-ids]
