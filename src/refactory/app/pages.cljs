@@ -1,13 +1,14 @@
-(ns refactory.app.pages
-  (:require [refactory.app.db :as db]))
+(ns refactory.app.pages)
 
 
-(db/register-ds-schema!
-  {:page/id {:db/unique :db.unique/identity
-             :valid/malli :keyword}})
+(defmulti config
+  "Configuration for each page. Should return a map with any of our supported
+  keys:
 
-
-(defmulti config identity)
+    :enter - A re-frame event to dispatch before switching to the page.
+    :leave - A re-frame event to dispatch before switching away from a page.
+  "
+  identity)
 
 
 (defmethod config :default

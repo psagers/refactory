@@ -14,23 +14,14 @@
             [refactory.app.util :refer [compare-by forall per-minute with-places]]))
 
 
-(db/register-ds-schema!
-  {:factory/title {:db/index true
-                   :valid/malli [:string {:min 1, :max 30}]}
-   :factory/job-id {:db/valueType :db.type/ref
-                    :db/cardinality :db.cardinality/many
-                    :db/isComponent true}
+(when ^boolean goog.DEBUG
+  (db/register-app-db-key! ::ui {:optional true}
+                           [:map
+                            [:factory-name-input {:optional true}
+                             :string]
 
-   :job/recipe-id {:valid/malli :string}
-   :job/enabled? {:valid/malli :boolean}
-   :job/instance-id {:db/valueType :db.type/ref
-                     :db/cardinality :db.cardinality/many
-                     :db/isComponent true}
-
-   :instance/overdrive {:valid/malli [:int {:min 0, :max 250}]}
-
-   :factories/selected {:db/valueType :db.type/ref
-                        :valid/malli :int}})
+                            [:overdrive-inputs {:optional true}
+                              [:map-of :int :int]]]))
 
 
 (defmethod pages/config :factories
@@ -99,7 +90,7 @@
   [(rp/inject-cofx :ds)]
   (fn [{:keys [db ds]} [_ factory-id]]
     (let [current (:factory/title (ds/entity ds factory-id))]
-      {:db (assoc-in db [::ui :factory-rename] {:value (or current "")})
+      {:db (assoc-in db [::ui :factory-name-input] (or current ""))
        :fx [[:dispatch [::modal/show ::rename-factory {:factory-id factory-id
                                                        ::modal/close? false}]]]})))
 
@@ -107,21 +98,21 @@
 (rf/reg-event-db
   ::type-factory-name
   (fn [db [_ value]]
-    (assoc-in db [::ui :factory-rename :value] value)))
+    (assoc-in db [::ui :factory-name-input] value)))
 
 
 (rf/reg-event-fx
   ::cancel-rename-factory
   (fn [{:keys [db]} _]
-    {:db (update db ::ui dissoc :factory-rename)
+    {:db (update db ::ui dissoc :factory-name-input)
      :fx [[:dispatch [::modal/hide ::rename-factory]]]}))
 
 
 (rf/reg-event-fx
   ::finish-rename-factory
   (fn [{:keys [db]} [_ factory-id]]
-    (let [value (get-in db [::ui :factory-rename :value])]
-      {:db (update db ::ui dissoc :factory-rename)
+    (let [value (get-in db [::ui :factory-name-input])]
+      {:db (update db ::ui dissoc :factory-name-input)
        :fx [[:transact [[:db/add factory-id :factory/title value]]]
             [:dispatch [::modal/hide ::rename-factory]]]})))
 
@@ -294,10 +285,10 @@
 
 
 (rf/reg-sub
-  ::factory-rename
+  ::factory-name-input
   :<- [::ui]
   (fn [ui _]
-    (ui :factory-rename)))
+    (get ui :factory-name-input)))
 
 
 (rp/reg-query-sub
@@ -607,8 +598,8 @@
 
 (defmethod modal/content ::rename-factory
   [{:keys [factory-id]}]
-  (r/with-let [state-sub (rf/subscribe [::factory-rename])]
-    (let [{:keys [value]} @state-sub]
+  (r/with-let [input-value-sub (rf/subscribe [::factory-name-input])]
+    (let [input-value @input-value-sub]
       [:div.modal-card
        [:header.modal-card-head
         [:p.modal-card-title "Rename factory"]
@@ -617,7 +608,7 @@
         [:div.field
          [:div.control
           [:input.input {:type "text"
-                         :value value
+                         :value input-value
                          :min-length 1
                          :max-length 30
                          :autoFocus true

@@ -12,31 +12,50 @@
 ;;
 ;; DataScript
 ;;
+;; DataScript holds all persistent application data. When we save our state,
+;; this is what we're saving.
+;;
 
-(defonce ds-schema (atom {}))
+;; Our full DataScript schema is here. This may include some of our own keys:
+;;
+;;   :valid/malli: An optional malli schema to validate attribute values. These
+;;                 are only used to log validation warnings during development.
+;;
+(def ds-schema
+  {;; Each page gets a record to store any page-global state.
+   :page/id {:db/unique :db.unique/identity
+             :valid/malli :keyword}
+
+   ;; For example, [:page/id :factories] will hold the currently selected
+   ;; factory.
+   :factories/selected {:db/valueType :db.type/ref
+                        :valid/malli :int}
+
+   ;; Factories and their components (refactory.app.pages.factories).
+   :factory/title {:db/index true
+                   :valid/malli [:string {:min 1, :max 30}]}
+   :factory/job-id {:db/valueType :db.type/ref
+                    :db/cardinality :db.cardinality/many
+                    :db/isComponent true}
+
+   :job/recipe-id {:valid/malli :string}
+   :job/enabled? {:valid/malli :boolean}
+   :job/instance-id {:db/valueType :db.type/ref
+                     :db/cardinality :db.cardinality/many
+                     :db/isComponent true}
+
+   :instance/overdrive {:valid/malli [:int {:min 0, :max 250}]}})
 
 
-(defn ds []
+(defn ds
+  "Convenience wrapper to the DataScript db, mainly for the REPL."
+  []
   @@re-posh.db/store)
-
-
-(defn register-ds-schema!
-  "Registers a (partial) DataScript schema.
-
-  Namespaces should call this at load time to register their attributes. The
-  argument will be merged with other registrations to form the full schema
-  passed to datascript.core/create-conn."
-  [schema]
-  (when (nil? @re-posh.db/store)
-    (when-some [conflicts (not-empty (filter (partial contains? @ds-schema) (keys schema)))]
-      (js/console.warn "Overwriting schema attributes:" (pr-str conflicts))))
-
-  (swap! ds-schema merge schema))
 
 
 (defn attr->malli-schema
   [attr]
-  (get-in @ds-schema [attr :valid/malli]))
+  (get-in ds-schema [attr :valid/malli]))
 
 
 (defn- validate-tx-report
@@ -118,21 +137,6 @@
     (::dirty? db)))
 
 
-(defn init
-  []
-  (let [conn (or (create-conn-from-storage)
-                 (ds/create-conn @ds-schema))]
-    (rp/connect! conn)
-
-    (ds/listen! conn mark-dirty)
-
-    (when ^boolean goog.DEBUG
-      (ds/listen! conn validate-tx-report)
-      (ds/listen! conn tap-datoms))
-
-    conn))
-
-
 (defn tap-ds
   []
   (tap> (mapv (comp ds/touch (partial ds/entity (ds)))
@@ -167,14 +171,19 @@
 ;;
 ;; app-db
 ;;
+;; Although DataScript holds all persistent data, we still use the app-db for
+;; some transient UI state. Nothing in the app-db gets saved to storage and
+;; much of it will get cleared every time the user switches to a different
+;; page.
+;;
 
 (defonce db-schema (atom {:src {}}))
 
 
-(defn register-db-entry!
-  "Registers the malli schema for a new top-level db entry."
+(defn register-app-db-key!
+  "Registers the malli schema for a new top-level app-db key."
   ([db-key schema]
-   (register-db-entry! db-key {} schema))
+   (register-app-db-key! db-key {} schema))
   ([db-key opts schema]
    (swap! db-schema #(-> %
                          (assoc-in [:src db-key] [db-key opts schema])
@@ -194,14 +203,35 @@
           :schema)))
 
 
-(defn db-errors
+(defn- db-errors
   [db]
   (-> (m/explain (compiled-db-schema) db)
       (me/humanize)))
 
 
-(comment
-  (m/ast [:map [::key {:min 1} :int]])
-  (m/validate (m/from-ast {:type :map
-                           :keys {::key (m/ast [:int {:min 1}])}})
-              {}))
+(defn- validate-app-db
+  [db _event]
+  (when-some [errors (db-errors db)]
+    (js/console.warn errors)))
+
+
+;;
+;; Initialization
+;;
+
+(defn init
+  []
+  (let [conn (or (create-conn-from-storage)
+                 (ds/create-conn ds-schema))]
+    (rp/connect! conn)
+
+    ;; Queue auto-save after every DataScript transaction.
+    (ds/listen! conn mark-dirty)
+
+    (when ^boolean goog.DEBUG
+      ;; Install validation hooks for development.
+      (ds/listen! conn validate-tx-report)
+      (rf/reg-global-interceptor (rf/after validate-app-db))
+
+      ;; Report all DataScript changes to portal.
+      (ds/listen! conn tap-datoms))))

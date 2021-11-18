@@ -13,8 +13,35 @@
 
 
 (when ^boolean goog.DEBUG
-  (db/register-db-entry! ::page :keyword)
-  (db/register-db-entry! ::expanded-navbars [:set :keyword]))
+  (db/register-app-db-key! ::page :keyword)
+  (db/register-app-db-key! ::expanded-navbars [:set :keyword]))
+
+
+;;
+;; Active page
+;;
+
+(rf/reg-event-db
+  ::set-page
+  (fn [db [_ page]]
+    (assoc db ::page page)))
+
+
+(rf/reg-sub
+  ::page
+  (fn [db _]
+    (::page db)))
+
+
+(rf/reg-event-fx
+  ::switch-to
+  (fn [db [_ page]]
+    (let [old (::page db)]
+      {:fx [(when-some [leave (:leave (pages/config old))]
+              [:dispatch leave])
+            (when-some [enter (:enter (pages/config page))]
+              [:dispatch enter])
+            [:dispatch [::set-page page]]]})))
 
 
 ;;
@@ -69,33 +96,6 @@
 
 
 ;;
-;; Active page
-;;
-
-(rf/reg-event-db
-  ::set-page
-  (fn [db [_ page]]
-    (assoc db ::page page)))
-
-
-(rf/reg-sub
-  ::page
-  (fn [db _]
-    (::page db)))
-
-
-(rf/reg-event-fx
-  ::switch-to
-  (fn [db [_ page]]
-    (let [old (::page db)]
-      {:fx [(when-some [leave (:leave (pages/config old))]
-              [:dispatch leave])
-            (when-some [enter (:enter (pages/config page))]
-              [:dispatch enter])
-            [:dispatch [::set-page page]]]})))
-
-
-;;
 ;; Root view
 ;;
 
@@ -125,9 +125,15 @@
 ;; Initialization
 ;;
 
-(defn- ^:dev/after-load install
+(defn- ^:dev/after-load install-ui
   []
   (rdom/render [root] (js/document.getElementById "app")))
+
+
+(rf/reg-fx
+  ::install-ui
+  (fn [_]
+    (install-ui)))
 
 
 (rf/reg-event-fx
@@ -145,31 +151,16 @@
      :fx [[:dispatch [::game/fetch-game-data {:on-success [::install-ui]}]]]}))
 
 
-(rf/reg-fx
-  ::install-ui
-  (fn [_]
-    (install)))
-
-
 (defn- loading []
   [:section.section
    [:h1.title.has-text-centered "Loading..."]])
-
-
-(defn- run-validation
-  [db event]
-  (when-some [errors (db/db-errors db)]
-    (js/console.warn errors)
-    (js/console.warn "After " event)))
 
 
 (defn init
   []
   (when ^boolean goog.DEBUG
     (add-tap #'portal.web/submit)
-    (portal.web/open)
-
-    (rf/reg-global-interceptor (rf/after run-validation)))
+    (portal.web/open))
 
   (db/init)
 
