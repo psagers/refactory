@@ -79,9 +79,6 @@
        [:a.navbar-item.is-tab {:class [(when (= @page :factories) "is-active")]
                                :on-click #(rf/dispatch [::switch-to :factories])}
         "Design"]
-       [:a.navbar-item.is-tab {:class [(when (= @page :build) "is-active")]
-                               :on-click #(rf/dispatch [::switch-to :build])}
-        "Build"]
        [:a.navbar-item.is-tab {:class [(when (= @page :explore) "is-active")]
                                :on-click #(rf/dispatch [::switch-to :explore])}
         "Explore"]]

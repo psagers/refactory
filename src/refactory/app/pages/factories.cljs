@@ -11,17 +11,25 @@
             [refactory.app.ui :as ui]
             [refactory.app.ui.modal :as modal]
             [refactory.app.ui.recipes :as recipes]
-            [refactory.app.util :refer [compare-by forall per-minute with-places]]))
+            [refactory.app.util :refer [compare-by forall per-minute]]))
 
 
 (when ^boolean goog.DEBUG
   (db/register-app-db-key! ::ui {:optional true}
                            [:map
+                            [:new-factory-form {:optional true}
+                             [:map
+                              [:title :string]
+                              [:mode [:enum :continuous :fixed]]]]
+
                             [:factory-name-input {:optional true}
                              :string]
 
                             [:overdrive-inputs {:optional true}
-                              [:map-of :int :int]]]))
+                             [:map-of :int :int]]
+
+                            [:job-count-inputs {:optional true}
+                             [:map-of :int :int]]]))
 
 
 (defmethod pages/config :factories
@@ -29,6 +37,27 @@
   {:enter [::enter]
    :leave [::leave]})
 
+
+(def default-factory-mode (db/attr->default :factory/mode))
+(def default-job-count (db/attr->default :job/count))
+(def default-overdrive (db/attr->default :instance/overdrive))
+
+
+(def signed-formatter (js/Intl.NumberFormat. js/undefined
+                                             #js {:signDisplay "exceptZero"
+                                                  :maximumFractionDigits 2}))
+
+(def total-formatter (js/Intl.NumberFormat. js/undefined
+                                            #js {:maximumFractionDigits 2}))
+
+
+(defn format-signed [v] (. signed-formatter format v))
+(defn format-total [v] (. total-formatter format v))
+
+
+;;
+;; Events
+;;
 
 (rf/reg-event-db
   ::enter
@@ -62,6 +91,50 @@
           (recur (inc n)))))))
 
 
+(rf/reg-event-fx
+  ::begin-new-factory
+  [(rf/inject-cofx :ds)]
+  (fn [{:keys [db ds]} _]
+    {:db (assoc-in db [::ui :new-factory-form] {:title (new-factory-title ds "")
+                                                :mode default-factory-mode})
+     :fx [[:dispatch [::modal/show ::new-factory]]]}))
+
+
+(rf/reg-event-db
+  ::type-new-factory-title
+  [(rf/path ::ui :new-factory-form)]
+  (fn [form [_ title]]
+    (assoc form :title title)))
+
+
+(rf/reg-event-db
+  ::set-new-factory-mode
+  [(rf/path ::ui :new-factory-form)]
+  (fn [form [_ mode]]
+    (assoc form :mode mode)))
+
+
+(rf/reg-event-fx
+  ::cancel-new-factory
+  [(rf/path ::ui)]
+  (fn [{ui :db} _]
+    {:db (dissoc ui :new-factory-form)
+     :fx [[:dispatch [::modal/hide ::new-factory]]]}))
+
+
+(rf/reg-event-fx
+  ::finish-new-factory
+  [(rf/inject-cofx :ds)
+   (rf/path ::ui)]
+  (fn [{ui :db, ds :ds} _]
+    (let [{:keys [title mode]} (:new-factory-form ui)
+          title (or (not-empty title) (new-factory-title ds "New Factory"))]
+      {:db (dissoc ui :new-factory-form)
+       :fx [[:transact [{:db/id -1, :factory/title title, :factory/mode mode}
+                        {:page/id :factories, :factories/selected -1}]]
+            [:dispatch [::modal/hide ::new-factory]]]})))
+
+
 (rp/reg-event-fx
   ::new-factory
   [(rp/inject-cofx :ds)]
@@ -83,6 +156,12 @@
   (fn [_ [_ temp-id {:keys [tempids]}]]
     (when-some [factory-id (get tempids temp-id)]
        [[:db/add [:page/id :factories] :factories/selected factory-id]])))
+
+
+(rp/reg-event-ds
+  ::set-factory-mode
+  (fn [_ [_ factory-id mode]]
+    [[:db/add factory-id :factory/mode mode]]))
 
 
 (rf/reg-event-fx
@@ -167,18 +246,30 @@
 (rp/reg-event-ds
   ::add-job
   (fn [ds [_ factory-id recipe-id]]
-    (if-some [job-id (ds/q '[:find ?job-id .
-                             :in $ ?factory-id ?recipe-id
-                             :where [?factory-id :factory/jobs ?job-id]
-                                    [?job-id :job/recipe-id ?recipe-id]]
-                           ds factory-id recipe-id)]
-      [{:db/id job-id
-        :job/instances {:db/id -1}}]
+    (let [mode (:factory/mode (ds/entity ds factory-id) default-factory-mode)
+          continuous? (= mode :continuous)
+          [job-id disabled?] (ds/q '[:find [?job-id ?disabled]
+                                     :in $ ?factory-id ?recipe-id
+                                     :where [?factory-id :factory/jobs ?job-id]
+                                            [?job-id :job/recipe-id ?recipe-id]
+                                            [(get-else $ ?job-id :job/disabled? false) ?disabled]]
+                                   ds factory-id recipe-id)]
+      (cond
+        (and job-id disabled?)
+        [[:db/retract job-id :job/disabled?]]
 
-      [{:db/id factory-id
-        :factory/jobs [{:db/id -1
-                        :job/recipe-id recipe-id
-                        :job/instances [{:db/id -2}]}]}])))
+        (and job-id continuous?)
+        [{:db/id job-id
+          :job/instances {:db/id -1}}]
+
+        job-id
+        []
+
+        :else
+        [{:db/id factory-id
+          :factory/jobs [{:db/id -1
+                          :job/recipe-id recipe-id
+                          :job/instances [{:db/id -2}]}]}]))))
 
 
 (rp/reg-event-ds
@@ -199,7 +290,7 @@
   ::add-instance
   (fn [_ [_ job-id]]
     [{:db/id job-id
-      :job/instances [{:db/id -1}]}]))
+      :job/instances {:db/id -1}}]))
 
 
 (rp/reg-event-ds
@@ -212,7 +303,7 @@
   ::edit-overdrive
   [(rf/inject-cofx :ds)]
   (fn [{:keys [db ds]} [_ instance-id]]
-    (let [value (:instance/overdrive (ds/entity ds instance-id) 100)]
+    (let [value (:instance/overdrive (ds/entity ds instance-id) default-overdrive)]
       {:db (assoc-in db [::ui :overdrive-inputs instance-id] value)})))
 
 
@@ -229,10 +320,40 @@
   (fn [{:keys [db]} [_ instance-id]]
     (let [value (get-in db [::ui :overdrive-inputs instance-id])]
         {:db (update-in db [::ui :overdrive-inputs] dissoc instance-id)
-         :fx [[:transact [(if (= value 100)
+         :fx [[:transact [(if (= value default-overdrive)
                             [:db/retract instance-id :instance/overdrive]
                             [:db/add instance-id :instance/overdrive value])]]]})))
 
+
+(rf/reg-event-fx
+  ::edit-job-count
+  [(rf/inject-cofx :ds)]
+  (fn [{:keys [db ds]} [_ job-id]]
+    (let [value (:job/count (ds/entity ds job-id) default-job-count)]
+      {:db (assoc-in db [::ui :job-count-inputs job-id] value)})))
+
+
+(rf/reg-event-db
+  ::type-job-count-input
+  (fn [db [_ job-id value]]
+    (cond-> db
+      (>= value 0)
+      (assoc-in [::ui :job-count-inputs job-id] value))))
+
+
+(rf/reg-event-fx
+  ::save-job-count
+  (fn [{:keys [db]} [_ job-id]]
+    (let [value (get-in db [::ui :job-count-inputs job-id])]
+        {:db (update-in db [::ui :job-count-inputs] dissoc job-id)
+         :fx [[:transact [(if (= value default-job-count)
+                            [:db/retract job-id :job/count]
+                            [:db/add job-id :job/count value])]]]})))
+
+
+;;
+;; Subscriptions
+;;
 
 (rf/reg-sub
   ::ui
@@ -252,7 +373,7 @@
   :<- [::selected-factory-id]
   (fn [factory-id _]
     {:type :pull
-     :pattern '[:db/id :factory/title]
+     :pattern '[:db/id :factory/mode :factory/title]
      :id factory-id}))
 
 
@@ -267,7 +388,7 @@
   :<- [::factory-ids]
   (fn [factory-ids _]
     {:type :pull-many
-     :pattern '[:db/id :factory/title]
+     :pattern '[:db/id :factory/mode :factory/title]
      :ids factory-ids}))
 
 
@@ -280,7 +401,14 @@
 
 (rp/reg-pull-sub
   ::factory
-  '[:db/id :factory/title])
+  '[:db/id :factory/mode :factory/title])
+
+
+(rf/reg-sub
+  ::new-factory-form
+  :<- [::ui]
+  (fn [ui _]
+    (get ui :new-factory-form)))
 
 
 (rf/reg-sub
@@ -317,9 +445,18 @@
          (mapv first))))
 
 
+;; The :mode of the job's factory.
+(rp/reg-query-sub
+  ::job-mode
+  '[:find ?mode .
+    :in $ ?job-id
+    :where [?factory-id :factory/jobs ?job-id]
+           [(get-else $ ?factory-id :factory/mode :continuous) ?mode]])
+
+
 (rp/reg-pull-sub
   ::job
-  '[:db/id :job/recipe-id :job/disabled?])
+  '[:db/id :job/recipe-id :job/count :job/disabled?])
 
 
 (defn- sorted-item-map
@@ -341,6 +478,18 @@
               [item-id (per-minute (* (- amount) factor) duration)])
             (for [{:keys [item-id amount]} output]
               [item-id (per-minute (* amount factor) duration)]))))
+
+
+(defn- recipe-counts
+  "Generates the same structure as recipe-flows, but with absolute units.
+
+  In this case, the factor is just the number of times the recipe is produced."
+  [recipe-id factor]
+  (let [{:keys [input output]} (game/id->recipe recipe-id)]
+    (concat (for [{:keys [item-id amount]} input]
+              [item-id (* (- amount) factor)])
+            (for [{:keys [item-id amount]} output]
+              [item-id (* amount factor)]))))
 
 
 (rp/reg-query-sub
@@ -368,6 +517,7 @@
       0)))
 
 
+;; For cotinuous mode.
 (rf/reg-sub
   ::job-flows
   (fn [[_ job-id] _]
@@ -377,11 +527,23 @@
     (recipe-flows (:job/recipe-id job) factor)))
 
 
-(defn- add-flow-to-totals
-  [m [item-id rate]]
+;; For fixed mode.
+(rf/reg-sub
+  ::job-counts
+  (fn [[_ job-id] _]
+    (rf/subscribe [::job job-id]))
+  (fn [job _]
+    (let [job-count (if (:job/disabled? job)
+                      0
+                      (:job/count job default-job-count))]
+      (recipe-counts (:job/recipe-id job) job-count))))
+
+
+(defn- add-to-totals
+  [m [item-id quantity]]
   (cond
-    (pos? rate) (update-in m [item-id :out] (fnil + 0) rate)
-    (neg? rate) (update-in m [item-id :in] (fnil + 0) (Math/abs rate))
+    (pos? quantity) (update-in m [item-id :out] (fnil + 0) quantity)
+    (neg? quantity) (update-in m [item-id :in] (fnil + 0) (Math/abs quantity))
     :else m))
 
 
@@ -389,9 +551,14 @@
   ::factory-totals
   (fn [_ [_ factory-id]]
     (reaction
-      (let [job-ids @(rf/subscribe [::job-ids factory-id])
-            job-flows (map #(deref (rf/subscribe [::job-flows %])) job-ids)]
-        (transduce cat (completing add-flow-to-totals) {} job-flows)))))
+      (let [factory @(rf/subscribe [::factory factory-id])
+            sub-id (case (:factory/mode factory default-factory-mode)
+                     :continuous ::job-flows
+                     :fixed ::job-counts
+                     ::job-flows)  ;; not reached
+            job-ids @(rf/subscribe [::job-ids factory-id])
+            job-quantities (map #(deref (rf/subscribe [sub-id %])) job-ids)]
+        (transduce cat (completing add-to-totals) {} job-quantities)))))
 
 
 (rf/reg-sub
@@ -452,6 +619,20 @@
     (get inputs instance-id)))
 
 
+(rf/reg-sub
+  ::job-count-inputs
+  :<- [::ui]
+  (fn [ui _]
+    (get ui :job-count-inputs)))
+
+
+(rf/reg-sub
+  ::job-count-input
+  :<- [::job-count-inputs]
+  (fn [inputs [_ job-id]]
+    (get inputs job-id)))
+
+
 ;;
 ;; Components
 ;;
@@ -465,7 +646,7 @@
        {:type "text"
         :readOnly true
         :size 5
-        :value (str (:instance/overdrive instance 100) "%")}]]
+        :value (str (:instance/overdrive instance default-overdrive) "%")}]]
 
      [:div.control
       [:button.button.is-small
@@ -518,9 +699,55 @@
          [:span.icon [:i.bi-x-lg]]]])]))
 
 
+(defn- job-count-display
+  [job-id]
+  (let [job @(rf/subscribe [::job job-id])]
+    [:div.field.has-addons
+     [:div.control
+      [:input.input.is-small
+       {:type "text"
+        :readOnly true
+        :size 5
+        :value (str (:job/count job default-job-count))}]]
+
+     [:div.control
+      [:button.button.is-small
+       {:on-click #(rf/dispatch [::edit-job-count job-id])}
+       [:span.icon [:i.bi-pencil]]]]]))
+
+
+(defn- job-count-input
+  [job-id]
+  (let [value @(rf/subscribe [::job-count-input job-id])]
+    [:div.field.has-addons
+     [:div.control
+      [:input.input.is-small
+       {:type "number", :size 5
+        :min 0
+        :value value
+        :on-change #(rf/dispatch-sync [::type-job-count-input job-id (-> % .-target .-value js/parseInt)])}]]
+
+     [:div.control
+      [:button.button.is-small
+       {:on-click #(rf/dispatch [::save-job-count job-id])}
+       [:span.icon [:i.bi-check]]]]]))
+
+
+(defn- job-count
+  [job-id]
+  (let [input-value @(rf/subscribe [::job-count-input job-id])]
+    [:div.field.is-horizontal.is-flex
+     [:div.field-label.is-small "Count"]
+     [:div.field-body.ml-2
+      (if input-value
+        [job-count-input job-id]
+        [job-count-display job-id])]]))
+
+
 (defn- job-actions
   [job-id]
-  (let [{:job/keys [disabled? recipe-id]} @(rf/subscribe [::job job-id])]
+  (let [{:job/keys [disabled? recipe-id]} @(rf/subscribe [::job job-id])
+        mode @(rf/subscribe [::job-mode job-id])]
     [:div.dropdown.is-hoverable
      [:div.dropdown-trigger
       [:button.button.is-white
@@ -530,9 +757,10 @@
        [:a.dropdown-item {:href "#"
                           :on-click (ui/link-dispatch [::modal/show ::recipes/details {:recipe-id recipe-id}])}
         "Show recipe"]
-       [:a.dropdown-item {:href "#"
-                          :on-click (ui/link-dispatch [::add-instance job-id])}
-        "Add builder"]
+       (when (= mode :continuous)
+         [:a.dropdown-item {:href "#"
+                            :on-click (ui/link-dispatch [::add-instance job-id])}
+          "Add builder"])
        [:hr.dropdown-divider]
        (if disabled?
          [:a.dropdown-item {:href "#"
@@ -554,25 +782,44 @@
        ^{:key item-id}
        [:div.is-flex.is-justify-content-space-between
         [:div.is-inline-flex (recipes/item-icon item-id) [:span.ml-2 (:display (game/id->item item-id))]]
-        [:span.is-family-monospace (when (pos? rate) "+") rate "/min"]])]))
+        [:span.is-family-monospace (format-signed rate) "/min"]])]))
+
+
+(defn- job-counts
+  [job-id]
+  (let [counts @(rf/subscribe [::job-counts job-id])]
+    [:div
+     (forall [[item-id quantity] counts]
+       ^{:key item-id}
+       [:div.is-flex.is-justify-content-space-between
+        [:div.is-inline-flex (recipes/item-icon item-id) [:span.ml-2 (:display (game/id->item item-id))]]
+        [:span.is-family-monospace (format-signed quantity)]])]))
 
 
 (defn- job-card
   [job-id]
   (let [job @(rf/subscribe [::job job-id])
+        mode @(rf/subscribe [::job-mode job-id])
+        continuous? (= mode :continuous)
         disabled? (:job/disabled? job)
         recipe (game/id->recipe (:job/recipe-id job))]
     [:div.card.job-card
      [:div.card-header
-      [:div.card-header-icon (recipes/item-icon (-> recipe :output first :item-id)
-                                                {:class ["is-medium"]})]
+      [:div.card-header-icon (let [{:keys [item-id amount]} (-> recipe :output first)]
+                               (recipes/item-io item-id (when-not continuous? amount)))]
       [:div.card-header-title (:display recipe) (when disabled? " (DISABLED)")]
       [:div.card-header-icon
        [job-actions job-id]]]
      [:div.card-content
-      [instance-rows job-id]
+      (case mode
+        :continuous [instance-rows job-id]
+        :fixed [job-count job-id]
+        nil)
       [:hr.hr]
-      [job-flows job-id]]]))
+      (case mode
+        :continuous [job-flows job-id]
+        :fixed [job-counts job-id]
+        nil)]]))
 
 
 (defn- factory-jobs
@@ -621,19 +868,26 @@
 
 (defn- factory-actions
   [factory-id]
-  [:div.dropdown.is-hoverable
-   [:div.dropdown-trigger
-    [:button.button.is-white
-     [:span.icon [:i.bi-gear]]]]
-   [:div.dropdown-menu
-    [:div.dropdown-content
-     [:a.dropdown-item {:on-click (ui/link-dispatch [::begin-rename-factory factory-id])}
-      "Rename"]
-     [:a.dropdown-item {:on-click (ui/link-dispatch [::duplicate-factory factory-id])}
-      "Duplicate"]
-     [:hr.dropdown-divider]
-     [:a.dropdown-item.has-text-danger {:on-click (ui/link-dispatch [::begin-delete-factory factory-id])}
-      "Delete..."]]]])
+  (let [{:factory/keys [mode]} @(rf/subscribe [::factory factory-id])]
+    [:div.dropdown.is-hoverable
+     [:div.dropdown-trigger
+      [:button.button.is-white
+       [:span.icon [:i.bi-gear]]]]
+     [:div.dropdown-menu
+      [:div.dropdown-content
+       (case mode
+         :continuous [:a.dropdown-item {:on-click (ui/link-dispatch [::set-factory-mode factory-id :fixed])}
+                      "Fixed mode"]
+         :fixed [:a.dropdown-item {:on-click (ui/link-dispatch [::set-factory-mode factory-id :continuous])}
+                 "Continuous mode"]
+         nil)
+       [:a.dropdown-item {:on-click (ui/link-dispatch [::begin-rename-factory factory-id])}
+        "Rename"]
+       [:a.dropdown-item {:on-click (ui/link-dispatch [::duplicate-factory factory-id])}
+        "Duplicate"]
+       [:hr.dropdown-divider]
+       [:a.dropdown-item.has-text-danger {:on-click (ui/link-dispatch [::begin-delete-factory factory-id])}
+        "Delete..."]]]]))
 
 
 (defn- factory-title
@@ -644,6 +898,51 @@
        [:h1.title (:factory/title factory)]
        [factory-actions factory-id]]
       [:h1.title "Add your first factory " [:i.bi-arrow-right]])))
+
+
+(defmethod modal/content ::new-factory
+  [_opts]
+  (let [{:keys [title mode]} @(rf/subscribe [::new-factory-form])]
+    [:div.modal-card
+     [:header.modal-card-head
+      [:p.modal-card-title "New factory"]
+      [:button.delete {:on-click #(rf/dispatch [::cancel-rename-factory])}]]
+     [:section.modal-card-body
+      [:form
+       [:div.field
+        [:label.label "Name"]
+        [:div.control
+         [:input.input {:type "text"
+                        :placeholder "New Factory"
+                        :value title
+                        :min-length 1
+                        :max-length 30
+                        :autoFocus true
+                        :on-change #(rf/dispatch-sync [::type-new-factory-title (-> % .-target .-value)])}]]]
+       [:div.field
+        [:label.label "Initial mode"]
+        [:div.control
+         [:label.radio [:input {:type "radio"
+                                :name "mode"
+                                :checked (= mode :continuous)
+                                :on-change #(rf/dispatch [::set-new-factory-mode :continuous])}]
+          " Continuous"]
+         [:p.help.ml-4 "Model a factory that will operate continuously. All calculations will be in units per minute."]]]
+
+       [:div.field
+        [:div.control
+         [:label.radio [:input {:type "radio"
+                                :name "mode"
+                                :checked (= mode :fixed)
+                                :on-change #(rf/dispatch [::set-new-factory-mode :fixed])}]
+          " Fixed"]
+         [:p.help.ml-4 "Model a production pipeline that will generate a fixed number of outputs. Useful for calculating the inputs needed for one-off production."]]]]]
+
+     [:footer.modal-card-foot.is-justify-content-end
+      [:button.button {:on-click #(rf/dispatch [::cancel-new-factory])}
+       "Cancel"]
+      [:button.button.is-success {:on-click #(rf/dispatch [::finish-new-factory])}
+       "Save"]]]))
 
 
 (defn- factory-select
@@ -666,7 +965,7 @@
          (when-not (empty? sorted-factories)
            [:hr.dropdown-divider])
          [:a.dropdown-item {:href "#"
-                            :on-click (ui/link-dispatch [::new-factory])}
+                            :on-click (ui/link-dispatch [::begin-new-factory])}
           "Add a factory"]]]])))
 
 
@@ -680,7 +979,9 @@
 
 (defn- factory-totals
   [factory-id]
-  (let [input-totals @(rf/subscribe [::factory-input-totals factory-id])
+  (let [{:factory/keys [mode]} @(rf/subscribe [::factory factory-id])
+        continuous? (= mode :continuous)
+        input-totals @(rf/subscribe [::factory-input-totals factory-id])
         local-totals @(rf/subscribe [::factory-local-totals factory-id])
         output-totals @(rf/subscribe [::factory-output-totals factory-id])]
     [:div.ml-auto.has-text-right {:style {:position "sticky"
@@ -688,7 +989,7 @@
       [:table.table.ml-auto
        [:thead
         [:tr
-         [:th "/min:"]
+         [:th (when continuous? "/min:")]
          [:th "In"]
          [:th "Out"]
          [:th "Net"]
@@ -698,27 +999,27 @@
           ^{:key item-id}
           [:tr
            [:td (recipes/item-icon item-id)]
-           [:td in]
+           [:td (format-total in)]
            [:td]
-           [:td (- in)]
+           [:td (format-total (- in))]
            [:td (chooser-link factory-id item-id)]])
         (forall [[item-id {:keys [in out]}] local-totals]
-          (let [net (with-places (- out in) 2)]
+          (let [net (- out in)]
             ^{:key item-id}
             [:tr
              [:td (recipes/item-icon item-id)]
-             [:td in]
-             [:td out]
-             [:td {:class [(when (neg? net) "has-text-danger")]} net]
-             [:td (chooser-link factory-id item-id)]]))
+             [:td (format-total in)]
+             [:td (format-total out)]
+             [:td {:class [(when (neg? net) "has-text-danger")]} (format-total net)]
+             [:td (when continuous? (chooser-link factory-id item-id))]]))
         (forall [[item-id {:keys [out]}] output-totals]
           ^{:key item-id}
           [:tr
            [:td (recipes/item-icon item-id)]
            [:td]
-           [:td out]
-           [:td out]
-           [:td (chooser-link factory-id item-id)]])]]]))
+           [:td (format-total out)]
+           [:td (format-total out)]
+           [:td (when continuous? (chooser-link factory-id item-id))]])]]]))
 
 
 (defn root []

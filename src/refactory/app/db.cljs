@@ -18,33 +18,42 @@
 
 ;; Our full DataScript schema is here. This may include some of our own keys:
 ;;
-;;   :valid/malli: An optional malli schema to validate attribute values. These
-;;                 are only used to log validation warnings during development.
+;;   :app/default: Usable by queries to fill in consistent default values for
+;;                 missing attributes.
+;;   :app/malli: An optional malli schema to validate attribute values. These
+;;               are only used to log validation warnings during development.
 ;;
 (def ds-schema
   {;; Each page gets a record to store any page-global state.
    :page/id {:db/unique :db.unique/identity
-             :valid/malli :keyword}
+             :app/malli :keyword}
 
    ;; For example, [:page/id :factories] will hold the currently selected
    ;; factory.
    :factories/selected {:db/valueType :db.type/ref
-                        :valid/malli :int}
+                        :app/malli :int}
 
    ;; Factories and their components (refactory.app.pages.factories).
    :factory/title {:db/index true
-                   :valid/malli [:string {:min 1, :max 30}]}
+                   :app/malli [:string {:min 1, :max 30}]}
+   :factory/mode {:app/default :continuous
+                  :app/malli [:enum :continuous :fixed]}
    :factory/jobs {:db/valueType :db.type/ref
                   :db/cardinality :db.cardinality/many
                   :db/isComponent true}
 
-   :job/recipe-id {:valid/malli :string}
-   :job/disabled? {:valid/malli :boolean}
+   :job/recipe-id {:app/malli :string}
+   :job/disabled? {:app/malli :boolean}
+   ;; Number of iterations (for :fixed mode)
+   :job/count {:app/default 1
+               :app/malli 'nat-int?}
+   ;; Distinct builders (for :continuous mode)
    :job/instances {:db/valueType :db.type/ref
                    :db/cardinality :db.cardinality/many
                    :db/isComponent true}
 
-   :instance/overdrive {:valid/malli [:int {:min 0, :max 250}]}})
+   :instance/overdrive {:app/default 100
+                        :app/malli [:int {:min 0, :max 250}]}})
 
 
 (defn ds
@@ -53,9 +62,14 @@
   @@re-posh.db/store)
 
 
+(defn attr->default
+  [attr]
+  (get-in ds-schema [attr :app/default]))
+
+
 (defn attr->malli-schema
   [attr]
-  (get-in ds-schema [attr :valid/malli]))
+  (get-in ds-schema [attr :app/malli]))
 
 
 (defn- validate-tx-report

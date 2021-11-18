@@ -51,7 +51,7 @@
     [:div.recipe-io
      (forall [{:keys [item-id amount]} (:input recipe)]
        ^{:key item-id} [item-io item-id amount])
-     [:span.icon [:i.bi-caret-right-fill]]
+     [:span.icon.has-text-black [:i.bi-caret-right-fill]]
      (forall [{:keys [item-id amount]} (:output recipe)]
        ^{:key item-id} [item-io item-id amount])]))
 

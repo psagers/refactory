@@ -2,16 +2,24 @@
   (:require-macros refactory.app.util))
 
 
-(defn with-places
-  [value places]
-  (js/parseFloat (.toFixed value places)))
+(def number-formatter (js/Intl.NumberFormat.))
+
+(defn num->str
+  "Locale-aware number formatting."
+  [n]
+  (. number-formatter format n))
+
+
+;; (defn with-places
+;;   [value places]
+;;   (js/parseFloat (.toFixed value places)))
 
 
 (defn per-minute
   [amount seconds]
   (-> (/ amount seconds)
-      (* 60)
-      (with-places 2)))
+      (* 60)))
+      ;; (with-places 2)))
 
 
 (defn compare-by
