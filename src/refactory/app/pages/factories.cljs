@@ -143,15 +143,25 @@
 
 (rp/reg-event-ds
   ::add-job
-  (fn [_ [_ factory-id recipe-id]]
-    [{:db/id factory-id
-      :factory/job-id -1}
-     {:db/id -1
-      :job/recipe-id recipe-id
-      :job/enabled? true
-      :job/instance-id -2}
-     {:db/id -2
-      :instance/overdrive 100}]))
+  (fn [ds [_ factory-id recipe-id]]
+    (if-some [job-id (ds/q '[:find ?job-id .
+                             :in $ ?factory-id ?recipe-id
+                             :where [?factory-id :factory/job-id ?job-id]
+                                    [?job-id :job/recipe-id ?recipe-id]]
+                           ds factory-id recipe-id)]
+      [{:db/id job-id
+        :job/instance-id -1}
+       {:db/id -1
+        :instance/overdrive 100}]
+
+      [{:db/id factory-id
+        :factory/job-id -1}
+       {:db/id -1
+        :job/recipe-id recipe-id
+        :job/enabled? true
+        :job/instance-id -2}
+       {:db/id -2
+        :instance/overdrive 100}])))
 
 
 (rp/reg-event-ds
@@ -494,7 +504,7 @@
 
 (defn- job-actions
   [job-id]
-  (let [job @(rf/subscribe [::job job-id])]
+  (let [{:job/keys [enabled? recipe-id]} @(rf/subscribe [::job job-id])]
     [:div.dropdown.is-hoverable
      [:div.dropdown-trigger
       [:button.button.is-white
@@ -502,10 +512,13 @@
      [:div.dropdown-menu
       [:div.dropdown-content
        [:a.dropdown-item {:href "#"
+                          :on-click (ui/link-dispatch [::modal/show ::recipes/details {:recipe-id recipe-id}])}
+        "Show recipe"]
+       [:a.dropdown-item {:href "#"
                           :on-click (ui/link-dispatch [::add-instance job-id])}
         "Add builder"]
        [:hr.dropdown-divider]
-       (if (false? (:job/enabled? job))
+       (if (false? enabled?)
          [:a.dropdown-item {:href "#"
                             :on-click (ui/link-dispatch [::set-job-enabled job-id true])}
           "Enable"]
@@ -673,13 +686,14 @@
            [:td (- in)]
            [:td (chooser-link factory-id item-id)]])
         (forall [[item-id {:keys [in out]}] local-totals]
-          ^{:key item-id}
-          [:tr
-           [:td (recipes/item-icon item-id)]
-           [:td in]
-           [:td out]
-           [:td (with-places (- out in) 2)]
-           [:td (chooser-link factory-id item-id)]])
+          (let [net (with-places (- out in) 2)]
+            ^{:key item-id}
+            [:tr
+             [:td (recipes/item-icon item-id)]
+             [:td in]
+             [:td out]
+             [:td {:class [(when (neg? net) "has-text-danger")]} net]
+             [:td (chooser-link factory-id item-id)]]))
         (forall [[item-id {:keys [out]}] output-totals]
           ^{:key item-id}
           [:tr

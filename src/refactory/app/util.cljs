@@ -8,7 +8,6 @@
 
 
 (defn per-minute
-  ""
   [amount seconds]
   (-> (/ amount seconds)
       (* 60)

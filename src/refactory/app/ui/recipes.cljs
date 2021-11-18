@@ -199,7 +199,7 @@
 (defn- io-details
   "Details of either inputs or outputs of a recipe."
   [components duration]
-  [:div.is-flex.is-flex-wrap-wrap
+  [:div.block.is-flex.is-flex-wrap-wrap
    (forall [{:keys [item-id amount]} components]
      (let [item (game/id->item item-id)]
        ^{:key item-id}
@@ -210,22 +210,30 @@
          (per-minute amount duration) "/min"]]))])
 
 
-(defn- chooser-recipe-expanded
-  "The expanded representation of a recipe in the chooser list."
+(defn recipe-details
   [recipe-id]
-  (let [{:keys [display input output builder-id duration alternate]} (game/id->recipe recipe-id)]
-    [:div.box
-     [:div.level.is-mobile
-      [:div.level-left>p.is-size-4 display (when alternate " (alt)")]
-      [:div.level-right>button.delete {:on-click #(rf/dispatch [::chooser-expand-recipe nil])}]]
-
-     [:p.is-size-5.mb-4 "Inputs"]
+  (let [{:keys [input output duration]} (game/id->recipe recipe-id)]
+    [:<>
+     [:p.is-size-5.block "Inputs"]
      (io-details input duration)
 
-     [:p.is-size-5.mt-5.mb-4 "Outputs"]
-     (io-details output duration)
+     [:p.is-size-5.mt-5.block "Outputs"]
+     (io-details output duration)]))
 
-     [:p.is-size-5.mt-4.mb-4 "Builder"]
+
+(defn chooser-recipe-expanded
+  [recipe-id]
+  (let [{:keys [display builder-id duration alternate]} (game/id->recipe recipe-id)]
+    [:div.box
+     [:div.level.is-mobile
+      [:div.level-left
+       [:p.is-size-4 display (when alternate " (alt)")]]
+      [:div.level-right
+       [:button.delete {:on-click #(rf/dispatch [::chooser-expand-recipe nil])}]]]
+
+     [recipe-details recipe-id]
+
+     [:p.is-size-5.block "Builder"]
      [:div.level
       [:div.level-left
        (:display (game/id->builder builder-id)) ", " duration "s"]
@@ -263,3 +271,14 @@
            (if (= recipe-id expanded-id)
              ^{:key recipe-id} [chooser-recipe-expanded recipe-id]
              ^{:key recipe-id} [chooser-recipe-brief recipe-id]))]]])))
+
+
+(defmethod modal/content ::details
+  [{:keys [recipe-id]}]
+  (let [{:keys [display alternate]} (game/id->recipe recipe-id)]
+    [:div.modal-card
+     [:header.modal-card-head
+      [:p.modal-card-title display (when alternate " (alt)")]
+      [:button.delete {:on-click #(rf/dispatch [::modal/hide ::details])}]]
+     [:section.modal-card-body
+      [recipe-details recipe-id]]]))
