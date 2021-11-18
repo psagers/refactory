@@ -1,5 +1,6 @@
 (ns refactory.app.pages.factories
-  (:require [datascript.core :as ds]
+  (:require [clojure.walk :as walk]
+            [datascript.core :as ds]
             [re-frame.core :as rf]
             [re-posh.core :as rp]
             [reagent.core :as r]
@@ -14,7 +15,8 @@
 
 
 (db/register-ds-schema!
-  {:factory/title {:valid/malli [:string {:min 1, :max 30}]}
+  {:factory/title {:db/index true
+                   :valid/malli [:string {:min 1, :max 30}]}
    :factory/job-id {:db/valueType :db.type/ref
                     :db/cardinality :db.cardinality/many
                     :db/isComponent true}
@@ -57,20 +59,23 @@
 
 
 (defn- new-factory-title
-  [ds]
-  (let [existing (factory-titles ds)]
-    (loop [n 1
-           title "New Factory"]
-      (if-not (existing title)
-        title
-        (recur (inc n) (str "New Factory " n))))))
+  [ds proposed]
+  (let [existing (factory-titles ds)
+        [base n] (if-some [[_ head tail] (re-matches #"(.*) (\d+)$" proposed)]
+                   [head (js/parseInt tail)]
+                   [proposed 0])]
+    (loop [n n]
+      (let [title (str base (when (pos? n) (str " " n)))]
+        (if-not (existing title)
+          title
+          (recur (inc n)))))))
 
 
 (rp/reg-event-fx
   ::new-factory
   [(rp/inject-cofx :ds)]
   (fn [{:keys [ds]} _]
-    {:fx [[:transact [{:db/id -1, :factory/title (new-factory-title ds)}
+    {:fx [[:transact [{:db/id -1, :factory/title (new-factory-title ds "New Factory")}
                       {:page/id :factories, :factories/selected -1}]]]}))
 
 
@@ -80,6 +85,13 @@
     [(if (some? factory-id)
        [:db/add [:page/id :factories] :factories/selected factory-id]
        [:db/retract [:page/id :factories] :factories/selected factory-id])]))
+
+
+(rp/reg-event-ds
+  ::select-new-factory
+  (fn [_ [_ temp-id {:keys [tempids]}]]
+    (when-some [factory-id (get tempids temp-id)]
+       [[:db/add [:page/id :factories] :factories/selected factory-id]])))
 
 
 (rf/reg-event-fx
@@ -115,6 +127,20 @@
 
 
 (rf/reg-event-fx
+  ::duplicate-factory
+  [(rf/inject-cofx :ds)]
+  (fn [{:keys [ds]} [_ factory-id]]
+    (let [factory (ds/pull ds '[*] factory-id)
+          new-factory (walk/postwalk #(if (and (map? %) (contains? % :db/id))
+                                        (update % :db/id -)
+                                        %)
+                                     factory)
+          new-factory (update new-factory :factory/title (partial new-factory-title ds))]
+      {:fx [[:transact+ {:datoms [new-factory]
+                         :on-success [::select-new-factory (:db/id new-factory)]}]]})))
+
+
+(rf/reg-event-fx
   ::begin-delete-factory
   [(rp/inject-cofx :ds)]
   (fn [{:keys [ds]} [_ factory-id]]
@@ -137,8 +163,8 @@
                               (sort)
                               (first)
                               (second))]
-      {:fx [[:dispatch [::select-factory next-factory-id]]
-            [:transact [[:db/retractEntity factory-id]]]]})))
+      {:fx [[:transact [[:db/add [:page/id :factories] :factories/selected next-factory-id]
+                        [:db/retractEntity factory-id]]]]})))
 
 
 (rp/reg-event-ds
@@ -611,11 +637,12 @@
      [:span.icon [:i.bi-gear]]]]
    [:div.dropdown-menu
     [:div.dropdown-content
-     [:a.dropdown-item {:href "#"
-                        :on-click (ui/link-dispatch [::begin-rename-factory factory-id])}
+     [:a.dropdown-item {:on-click (ui/link-dispatch [::begin-rename-factory factory-id])}
       "Rename"]
-     [:a.dropdown-item.has-text-danger {:href "#"
-                                        :on-click (ui/link-dispatch [::begin-delete-factory factory-id])}
+     [:a.dropdown-item {:on-click (ui/link-dispatch [::duplicate-factory factory-id])}
+      "Duplicate"]
+     [:hr.dropdown-divider]
+     [:a.dropdown-item.has-text-danger {:on-click (ui/link-dispatch [::begin-delete-factory factory-id])}
       "Delete..."]]]])
 
 

@@ -9,10 +9,7 @@
             [refactory.app.game :as game]
             [refactory.app.pages :as pages]
             [refactory.app.pages.factories :as factories]
-            ;; [refactory.app.ui :as ui]
             [refactory.app.ui.modal :as modal]))
-            ;; [refactory.app.ui.recipes :as recipes]
-            ;; [refactory.app.util :refer [per-minute]]))
 
 
 (when ^boolean goog.DEBUG
@@ -49,14 +46,18 @@
                          :class [(when @expanded? "is-active")]
                          :on-click #(rf/dispatch [::toggle-navbar :main])}
        [:span] [:span] [:span]]]
+
      [:div.navbar-menu {:class [(when @expanded? "is-active")]}
       [:div.navbar-start
        [:a.navbar-item.is-tab {:class [(when (= @page :factories) "is-active")]
                                :on-click #(rf/dispatch [::switch-to :factories])}
-        "Factories"]
+        "Design"]
+       [:a.navbar-item.is-tab {:class [(when (= @page :build) "is-active")]
+                               :on-click #(rf/dispatch [::switch-to :build])}
+        "Build"]
        [:a.navbar-item.is-tab {:class [(when (= @page :explore) "is-active")]
                                :on-click #(rf/dispatch [::switch-to :explore])}
-        "What can I build?"]]
+        "Explore"]]
 
       [:div.navbar-end
        [:a.navbar-item.is-tab {:class [(when (= @page :config) "is-active")]

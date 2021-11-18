@@ -41,12 +41,14 @@
 
 (defn- validate-tx-report
   [{:keys [tx-data]}]
-  (doseq [[eid attr value _timestamp added?] tx-data]
-    (when added?
-      (when-some [schema (attr->malli-schema attr)]
-        (when-not (m/validate schema value)
-          (doseq [msg (me/humanize (m/explain schema value))]
-            (js/console.warn (pr-str [eid attr value]) "- value" msg)))))))
+  (if (empty? tx-data)
+    (js/console.warn "Transaction affected no datoms.")
+    (doseq [[eid attr value _timestamp added?] tx-data]
+      (when added?
+        (when-some [schema (attr->malli-schema attr)]
+          (when-not (m/validate schema value)
+            (doseq [msg (me/humanize (m/explain schema value))]
+              (js/console.warn (pr-str [eid attr value]) "- value" msg))))))))
 
 
 (defn- tap-datoms
@@ -63,7 +65,7 @@
   (->> (ds)
        (ds/serializable)
        (js/JSON.stringify)
-       (.setItem js/window.localStorage STORAGE-KEY)))
+       (. js/window.localStorage setItem STORAGE-KEY)))
 
 
 (defn- create-conn-from-storage
@@ -75,19 +77,7 @@
         (ds/conn-from-db))))
 
 
-(rf/reg-fx
-  ::save
-  (fn [_]
-    (save-to-storage!)))
-
-
-(def save-soon (debounce #(rf/dispatch [::save]) 1000))
-
-
-(rf/reg-fx
-  ::save-soon
-  (fn [_]
-    (save-soon)))
+(def save-soon (debounce #(rf/dispatch [::save]) 2500))
 
 
 (rf/reg-event-fx
@@ -97,6 +87,12 @@
      :fx [[::save-soon]]}))
 
 
+(rf/reg-fx
+  ::save-soon
+  (fn [_]
+    (save-soon)))
+
+
 (rf/reg-event-fx
   ::save
   (fn [{:keys [db]} _]
@@ -104,9 +100,16 @@
      :fx [[::save]]}))
 
 
+(rf/reg-fx
+  ::save
+  (fn [_]
+    (save-to-storage!)))
+
+
 (defn- mark-dirty
-  []
-  (rf/dispatch [::mark-dirty]))
+  [{:keys [tx-data]}]
+  (when (seq tx-data)
+    (rf/dispatch [::mark-dirty])))
 
 
 (rf/reg-sub
