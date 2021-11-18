@@ -34,15 +34,15 @@
    ;; Factories and their components (refactory.app.pages.factories).
    :factory/title {:db/index true
                    :valid/malli [:string {:min 1, :max 30}]}
-   :factory/job-id {:db/valueType :db.type/ref
-                    :db/cardinality :db.cardinality/many
-                    :db/isComponent true}
+   :factory/jobs {:db/valueType :db.type/ref
+                  :db/cardinality :db.cardinality/many
+                  :db/isComponent true}
 
    :job/recipe-id {:valid/malli :string}
-   :job/enabled? {:valid/malli :boolean}
-   :job/instance-id {:db/valueType :db.type/ref
-                     :db/cardinality :db.cardinality/many
-                     :db/isComponent true}
+   :job/disabled? {:valid/malli :boolean}
+   :job/instances {:db/valueType :db.type/ref
+                   :db/cardinality :db.cardinality/many
+                   :db/isComponent true}
 
    :instance/overdrive {:valid/malli [:int {:min 0, :max 250}]}})
 

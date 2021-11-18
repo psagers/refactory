@@ -117,6 +117,12 @@
             [:dispatch [::modal/hide ::rename-factory]]]})))
 
 
+;; To duplicate a factory:
+;;
+;;   1. Pull the full factory entity, which will include components.
+;;   2. Recursively walk the structure and turn all IDs into temp IDs. Also
+;;      give it a distinct name.
+;;   3. Save it. DataScript will create all new entities from the temp IDs.
 (rf/reg-event-fx
   ::duplicate-factory
   [(rf/inject-cofx :ds)]
@@ -163,28 +169,24 @@
   (fn [ds [_ factory-id recipe-id]]
     (if-some [job-id (ds/q '[:find ?job-id .
                              :in $ ?factory-id ?recipe-id
-                             :where [?factory-id :factory/job-id ?job-id]
+                             :where [?factory-id :factory/jobs ?job-id]
                                     [?job-id :job/recipe-id ?recipe-id]]
                            ds factory-id recipe-id)]
       [{:db/id job-id
-        :job/instance-id -1}
-       {:db/id -1
-        :instance/overdrive 100}]
+        :job/instances {:db/id -1}}]
 
       [{:db/id factory-id
-        :factory/job-id -1}
-       {:db/id -1
-        :job/recipe-id recipe-id
-        :job/enabled? true
-        :job/instance-id -2}
-       {:db/id -2
-        :instance/overdrive 100}])))
+        :factory/jobs [{:db/id -1
+                        :job/recipe-id recipe-id
+                        :job/instances [{:db/id -2}]}]}])))
 
 
 (rp/reg-event-ds
   ::set-job-enabled
   (fn [_ [_ job-id enabled?]]
-    [[:db/add job-id :job/enabled? enabled?]]))
+    [(if enabled?
+       [:db/retract job-id :job/disabled?]
+       [:db/add job-id :job/disabled? true])]))
 
 
 (rp/reg-event-ds
@@ -197,9 +199,7 @@
   ::add-instance
   (fn [_ [_ job-id]]
     [{:db/id job-id
-      :job/instance-id -1}
-     {:db/id -1
-      :instance/overdrive 100}]))
+      :job/instances [{:db/id -1}]}]))
 
 
 (rp/reg-event-ds
@@ -212,10 +212,7 @@
   ::edit-overdrive
   [(rf/inject-cofx :ds)]
   (fn [{:keys [db ds]} [_ instance-id]]
-    (let [value (ds/q '[:find ?value .
-                        :in $ ?instance-id
-                        :where [?instance-id :instance/overdrive ?value]]
-                      ds instance-id)]
+    (let [value (:instance/overdrive (ds/entity ds instance-id) 100)]
       {:db (assoc-in db [::ui :overdrive-inputs instance-id] value)})))
 
 
@@ -232,7 +229,9 @@
   (fn [{:keys [db]} [_ instance-id]]
     (let [value (get-in db [::ui :overdrive-inputs instance-id])]
         {:db (update-in db [::ui :overdrive-inputs] dissoc instance-id)
-         :fx [[:transact [[:db/add instance-id :instance/overdrive value]]]]})))
+         :fx [[:transact [(if (= value 100)
+                            [:db/retract instance-id :instance/overdrive]
+                            [:db/add instance-id :instance/overdrive value])]]]})))
 
 
 (rf/reg-sub
@@ -253,7 +252,7 @@
   :<- [::selected-factory-id]
   (fn [factory-id _]
     {:type :pull
-     :pattern '[*]
+     :pattern '[:db/id :factory/title]
      :id factory-id}))
 
 
@@ -268,7 +267,7 @@
   :<- [::factory-ids]
   (fn [factory-ids _]
     {:type :pull-many
-     :pattern '[*]
+     :pattern '[:db/id :factory/title]
      :ids factory-ids}))
 
 
@@ -281,7 +280,7 @@
 
 (rp/reg-pull-sub
   ::factory
-  '[*])
+  '[:db/id :factory/title])
 
 
 (rf/reg-sub
@@ -295,7 +294,7 @@
   ::job-ids
   '[:find [?job-id ...]
     :in $ ?factory-id
-    :where [?factory-id :factory/job-id ?job-id]])
+    :where [?factory-id :factory/jobs ?job-id]])
 
 
 ;; Jobs and their recipe-ids for a given factory.
@@ -303,7 +302,7 @@
   ::job-set
   '[:find ?job-id ?recipe-id
     :in $ ?factory-id
-    :where [?factory-id :factory/job-id ?job-id]
+    :where [?factory-id :factory/jobs ?job-id]
            [?job-id :job/recipe-id ?recipe-id]])
 
 
@@ -320,7 +319,7 @@
 
 (rp/reg-pull-sub
   ::job
-  '[:job/recipe-id :job/enabled?])
+  '[:db/id :job/recipe-id :job/disabled?])
 
 
 (defn- sorted-item-map
@@ -348,8 +347,8 @@
   ::instance-overdrives
   '[:find ?instance-id ?overdrive
     :in $ ?job-id
-    :where [?job-id :job/instance-id ?instance-id]
-           [?instance-id :instance/overdrive ?overdrive]])
+    :where [?job-id :job/instances ?instance-id]
+           [(get-else $ ?instance-id :instance/overdrive 100) ?overdrive]])
 
 
 (rf/reg-sub
@@ -359,7 +358,7 @@
      (rf/subscribe [::instance-overdrives job-id])
      (rf/subscribe [::overdrive-inputs])])
   (fn [[job overdrives inputs] _]
-    (if-not (false? (:job/enabled? job))
+    (if-not (:job/disabled? job)
       (transduce (comp (map (fn [[k v]]
                               (get inputs k v)))
                        (map #(/ % 100)))
@@ -423,7 +422,7 @@
   ::instance-ids
   '[:find [?instance-id ...]
     :in $ ?job-id
-    :where [?job-id :job/instance-id ?instance-id]])
+    :where [?job-id :job/instances ?instance-id]])
 
 
 (rf/reg-sub
@@ -436,7 +435,7 @@
 
 (rp/reg-pull-sub
   ::instance
-  '[*])
+  '[:db/id :instance/overdrive])
 
 
 (rf/reg-sub
@@ -466,7 +465,7 @@
        {:type "text"
         :readOnly true
         :size 5
-        :value (str (:instance/overdrive instance) "%")}]]
+        :value (str (:instance/overdrive instance 100) "%")}]]
 
      [:div.control
       [:button.button.is-small
@@ -521,7 +520,7 @@
 
 (defn- job-actions
   [job-id]
-  (let [{:job/keys [enabled? recipe-id]} @(rf/subscribe [::job job-id])]
+  (let [{:job/keys [disabled? recipe-id]} @(rf/subscribe [::job job-id])]
     [:div.dropdown.is-hoverable
      [:div.dropdown-trigger
       [:button.button.is-white
@@ -535,7 +534,7 @@
                           :on-click (ui/link-dispatch [::add-instance job-id])}
         "Add builder"]
        [:hr.dropdown-divider]
-       (if (false? enabled?)
+       (if disabled?
          [:a.dropdown-item {:href "#"
                             :on-click (ui/link-dispatch [::set-job-enabled job-id true])}
           "Enable"]
@@ -561,7 +560,7 @@
 (defn- job-card
   [job-id]
   (let [job @(rf/subscribe [::job job-id])
-        disabled? (false? (:job/enabled? job))
+        disabled? (:job/disabled? job)
         recipe (game/id->recipe (:job/recipe-id job))]
     [:div.card.job-card
      [:div.card-header
