@@ -303,7 +303,7 @@
 
 (rp/reg-pull-sub
   ::job
-  '[:job/recipe-id :job/enabled])
+  '[:job/recipe-id :job/enabled?])
 
 
 (defn- sorted-item-map
@@ -313,7 +313,7 @@
 
 
 (defn- recipe-flows
-  "Returns the rate at which each item consumed and produced by a job.
+  "Returns the rate at which each item is consumed and produced by a job.
 
   This is a list of [item-id rate] 2-tuples (rate = units per minute). Consumed
   resources have negative amounts. Note that some recipes produce and consume
@@ -676,7 +676,7 @@
          [:th "Out"]
          [:th "Net"]
          [:th]]]
-       [:tbody
+       [:tbody.is-family-monospace
         (forall [[item-id {:keys [in]}] input-totals]
           ^{:key item-id}
           [:tr

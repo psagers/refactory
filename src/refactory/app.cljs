@@ -9,7 +9,7 @@
             [refactory.app.game :as game]
             [refactory.app.pages :as pages]
             [refactory.app.pages.factories :as factories]
-            [refactory.app.ui :as ui]
+            ;; [refactory.app.ui :as ui]
             [refactory.app.ui.modal :as modal]))
             ;; [refactory.app.ui.recipes :as recipes]
             ;; [refactory.app.util :refer [per-minute]]))
@@ -39,8 +39,9 @@
 (defn navbar
   []
   (r/with-let [page (rf/subscribe [::page])
-               expanded? (rf/subscribe [::navbar-expanded? :main])]
-    [:nav#main-navbar.navbar {:role "navigation"}
+               expanded? (rf/subscribe [::navbar-expanded? :main])
+               dirty? (rf/subscribe [::db/dirty?])]
+    [:nav#main-navbar.navbar {:class [(if @dirty? "has-background-warning-light" "has-background-grey-lighter")]}
      [:div.navbar-brand
       [:div.navbar-item.has-background-dark.has-text-white-ter
        [:a.navbar-item.has-text-white {:href "/"} "Refactory"]]

@@ -1,5 +1,6 @@
 (ns refactory.app.db
   (:require [datascript.core :as ds]
+            [goog.functions :refer [debounce]]
             [malli.core :as m]
             [malli.error :as me]
             [posh.reagent]
@@ -13,6 +14,10 @@
 ;;
 
 (defonce ds-schema (atom {}))
+
+
+(defn ds []
+  @@re-posh.db/store)
 
 
 (defn register-ds-schema!
@@ -50,21 +55,79 @@
     (tap> (vec datom))))
 
 
+(def STORAGE-KEY "autosave")
+
+
+(defn- save-to-storage!
+  []
+  (->> (ds)
+       (ds/serializable)
+       (js/JSON.stringify)
+       (.setItem js/window.localStorage STORAGE-KEY)))
+
+
+(defn- create-conn-from-storage
+  []
+  (when-some [data (. js/window.localStorage getItem STORAGE-KEY)]
+    (-> data
+        (js/JSON.parse)
+        (ds/from-serializable)
+        (ds/conn-from-db))))
+
+
+(rf/reg-fx
+  ::save
+  (fn [_]
+    (save-to-storage!)))
+
+
+(def save-soon (debounce #(rf/dispatch [::save]) 1000))
+
+
+(rf/reg-fx
+  ::save-soon
+  (fn [_]
+    (save-soon)))
+
+
+(rf/reg-event-fx
+  ::mark-dirty
+  (fn [{:keys [db]} _]
+    {:db (assoc db ::dirty? true)
+     :fx [[::save-soon]]}))
+
+
+(rf/reg-event-fx
+  ::save
+  (fn [{:keys [db]} _]
+    {:db (dissoc db ::dirty?)
+     :fx [[::save]]}))
+
+
+(defn- mark-dirty
+  []
+  (rf/dispatch [::mark-dirty]))
+
+
+(rf/reg-sub
+  ::dirty?
+  (fn [db _]
+    (::dirty? db)))
+
+
 (defn init
   []
-  (let [conn (ds/create-conn @ds-schema)]
+  (let [conn (or (create-conn-from-storage)
+                 (ds/create-conn @ds-schema))]
     (rp/connect! conn)
+
+    (ds/listen! conn mark-dirty)
 
     (when ^boolean goog.DEBUG
       (ds/listen! conn validate-tx-report)
       (ds/listen! conn tap-datoms))
 
     conn))
-
-
-(defn ds
-  []
-  @@re-posh.db/store)
 
 
 (defn tap-ds
