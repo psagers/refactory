@@ -1,6 +1,7 @@
 (ns refactory.app.pages.factories
   (:require [clojure.walk :as walk]
             [datascript.core :as ds]
+            [fork.re-frame :as fork]
             [re-frame.core :as rf]
             [re-posh.core :as rp]
             [reagent.core :as r]
@@ -9,6 +10,7 @@
             [refactory.app.game :as game]
             [refactory.app.pages :as pages]
             [refactory.app.ui :as ui]
+            [refactory.app.ui.forms :as forms]
             [refactory.app.ui.modal :as modal]
             [refactory.app.ui.recipes :as recipes]
             [refactory.app.util :refer [compare-by forall per-minute]]))
@@ -91,56 +93,14 @@
           (recur (inc n)))))))
 
 
-(rf/reg-event-fx
-  ::begin-new-factory
-  [(rf/inject-cofx :ds)]
-  (fn [{:keys [db ds]} _]
-    {:db (assoc-in db [::ui :new-factory-form] {:title (new-factory-title ds "")
-                                                :mode default-factory-mode})
-     :fx [[:dispatch [::modal/show ::new-factory]]]}))
-
-
-(rf/reg-event-db
-  ::type-new-factory-title
-  [(rf/path ::ui :new-factory-form)]
-  (fn [form [_ title]]
-    (assoc form :title title)))
-
-
-(rf/reg-event-db
-  ::set-new-factory-mode
-  [(rf/path ::ui :new-factory-form)]
-  (fn [form [_ mode]]
-    (assoc form :mode mode)))
-
-
-(rf/reg-event-fx
-  ::cancel-new-factory
-  [(rf/path ::ui)]
-  (fn [{ui :db} _]
-    {:db (dissoc ui :new-factory-form)
-     :fx [[:dispatch [::modal/hide ::new-factory]]]}))
-
-
-(rf/reg-event-fx
-  ::finish-new-factory
-  [(rf/inject-cofx :ds)
-   (rf/path ::ui)]
-  (fn [{ui :db, ds :ds} _]
-    (let [{:keys [title mode]} (:new-factory-form ui)
-          title (or (not-empty title) (new-factory-title ds "New Factory"))]
-      {:db (dissoc ui :new-factory-form)
-       :fx [[:transact [{:db/id -1, :factory/title title, :factory/mode mode}
-                        {:page/id :factories, :factories/selected -1}]]
-            [:dispatch [::modal/hide ::new-factory]]]})))
-
-
 (rp/reg-event-fx
   ::new-factory
   [(rp/inject-cofx :ds)]
-  (fn [{:keys [ds]} _]
-    {:fx [[:transact [{:db/id -1, :factory/title (new-factory-title ds "New Factory")}
-                      {:page/id :factories, :factories/selected -1}]]]}))
+  (fn [{:keys [ds]} [_ {:factory/keys [title mode]}]]
+    (let [title (new-factory-title ds (or title "New Factory"))]
+      {:fx [[:transact [{:db/id -1, :factory/title title, :factory/mode mode}
+                        {:page/id :factories, :factories/selected -1}]]
+            [:dispatch [::modal/hide ::new-factory]]]})))
 
 
 (rp/reg-event-ds
@@ -402,13 +362,6 @@
 (rp/reg-pull-sub
   ::factory
   '[:db/id :factory/mode :factory/title])
-
-
-(rf/reg-sub
-  ::new-factory-form
-  :<- [::ui]
-  (fn [ui _]
-    (get ui :new-factory-form)))
 
 
 (rf/reg-sub
@@ -900,49 +853,72 @@
       [:h1.title "Add your first factory " [:i.bi-arrow-right]])))
 
 
+(defn- new-factory-form
+  [{:keys [form-id normalize-name values errors touched handle-change handle-blur handle-submit]}]
+  [:form {:id form-id
+          :on-submit handle-submit}
+   ;; This goes first to catch the enter key.
+   [:input.button.is-hidden {:type "submit"}]
+   [:div.modal-card
+    [:header.modal-card-head
+     [:p.modal-card-title "New factory"]
+     [:button.delete {:on-click (ui/link-dispatch [::modal/hide ::new-factory])}]]
+
+    [:section.modal-card-body
+     [:div.field
+      [:label.label "Name"]
+      [:div.control
+       [:input.input {:type "text"
+                      :name (normalize-name :factory/title)
+                      :placeholder "New Factory"
+                      :value (values :factory/title)
+                      :min-length 1
+                      :max-length 30
+                      :autoFocus true
+                      :on-blur handle-blur
+                      :on-change handle-change}]
+       (when (touched :factory/title)
+         (when-some [error (get errors :factory/title)]
+           [:p.help.is-danger "Name " (first error)]))]]
+
+     [:div.field
+      [:label.label "Initial mode"]
+      [:div.control
+       [:label.radio [:input {:type "radio"
+                              :name (normalize-name :factory/mode)
+                              :value "continuous"
+                              :checked (= (values :factory/mode) "continuous")
+                              :on-blur handle-blur
+                              :on-change handle-change}]
+        " Continuous"]
+       [:p.help.ml-4 "Model a factory that will operate continuously. All calculations will be in units per minute."]]
+      [:div.control
+       [:label.radio [:input {:type "radio"
+                              :name (normalize-name :factory/mode)
+                              :value "fixed"
+                              :checked (= (values :factory/mode) "fixed")
+                              :on-blur handle-blur
+                              :on-change handle-change}]
+        " Fixed"]
+       [:p.help.ml-4 "Model a production pipeline that will generate a fixed number of outputs. Useful for calculating the inputs needed for one-off production."]]]]
+
+    [:footer.modal-card-foot.is-justify-content-end
+     [:button.button {:on-click (ui/link-dispatch [::modal/hide ::new-factory])}
+      "Cancel"]
+     [:input.button.is-success {:type "submit"
+                                :value "Save"}]]]])
+
+
 (defmethod modal/content ::new-factory
   [_opts]
-  (let [{:keys [title mode]} @(rf/subscribe [::new-factory-form])]
-    [:div.modal-card
-     [:header.modal-card-head
-      [:p.modal-card-title "New factory"]
-      [:button.delete {:on-click #(rf/dispatch [::cancel-rename-factory])}]]
-     [:section.modal-card-body
-      [:form
-       [:div.field
-        [:label.label "Name"]
-        [:div.control
-         [:input.input {:type "text"
-                        :placeholder "New Factory"
-                        :value title
-                        :min-length 1
-                        :max-length 30
-                        :autoFocus true
-                        :on-change #(rf/dispatch-sync [::type-new-factory-title (-> % .-target .-value)])}]]]
-       [:div.field
-        [:label.label "Initial mode"]
-        [:div.control
-         [:label.radio [:input {:type "radio"
-                                :name "mode"
-                                :checked (= mode :continuous)
-                                :on-change #(rf/dispatch [::set-new-factory-mode :continuous])}]
-          " Continuous"]
-         [:p.help.ml-4 "Model a factory that will operate continuously. All calculations will be in units per minute."]]]
-
-       [:div.field
-        [:div.control
-         [:label.radio [:input {:type "radio"
-                                :name "mode"
-                                :checked (= mode :fixed)
-                                :on-change #(rf/dispatch [::set-new-factory-mode :fixed])}]
-          " Fixed"]
-         [:p.help.ml-4 "Model a production pipeline that will generate a fixed number of outputs. Useful for calculating the inputs needed for one-off production."]]]]]
-
-     [:footer.modal-card-foot.is-justify-content-end
-      [:button.button {:on-click #(rf/dispatch [::cancel-new-factory])}
-       "Cancel"]
-      [:button.button.is-success {:on-click #(rf/dispatch [::finish-new-factory])}
-       "Save"]]]))
+  [fork/form {:path ::new-factory
+              :keywordize-keys true
+              :prevent-default? true
+              :clean-on-unmount? true
+              :initial-values {:factory/mode "continuous"}
+              :validation forms/values->errors
+              :on-submit (forms/values-dispatch [::new-factory])}
+   new-factory-form])
 
 
 (defn- factory-select
@@ -958,14 +934,12 @@
         [:div.dropdown-content
          (forall [{:keys [db/id factory/title]} sorted-factories]
            ^{:key id}
-           [:a.dropdown-item {:href "#"
-                              :on-click (ui/link-dispatch [::select-factory id])
+           [:a.dropdown-item {:on-click (ui/link-dispatch [::select-factory id])
                               :class [(when (= id selected-factory-id) "is-active")]}
             title])
          (when-not (empty? sorted-factories)
            [:hr.dropdown-divider])
-         [:a.dropdown-item {:href "#"
-                            :on-click (ui/link-dispatch [::begin-new-factory])}
+         [:a.dropdown-item {:on-click (ui/link-dispatch [::modal/show ::new-factory])}
           "Add a factory"]]]])))
 
 

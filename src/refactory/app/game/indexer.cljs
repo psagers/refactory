@@ -20,7 +20,7 @@
             (-> (id->item item-id)
                 (:value)
                 (* amount)))]
-    (-> (transduce (map io->value) + 0 (get recipe (if output? :output :input)))
+    (-> (transduce (map io->value) + (get recipe (if output? :output :input)))
         (per-minute (:duration recipe)))))
 
 

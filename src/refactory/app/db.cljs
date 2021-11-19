@@ -5,6 +5,7 @@
             [malli.error :as me]
             [posh.reagent]
             [re-frame.core :as rf]
+            [re-frame.db]
             [re-posh.core :as rp]
             [re-posh.db]))
 
@@ -37,7 +38,7 @@
    :factory/title {:db/index true
                    :app/malli [:string {:min 1, :max 30}]}
    :factory/mode {:app/default :continuous
-                  :app/malli [:enum :continuous :fixed]}
+                  :app/malli [:and :keyword [:enum :continuous :fixed]]}
    :factory/jobs {:db/valueType :db.type/ref
                   :db/cardinality :db.cardinality/many
                   :db/isComponent true}
@@ -173,8 +174,14 @@
               (ds/q '[:find [?e ...] :where [?e]] (ds)))))
 
 
+(defn tap-app-db
+  []
+  (tap> @re-frame.db/app-db))
+
+
 (comment
-  (tap-ds))
+  (tap-ds)
+  (tap-app-db))
 
 
 (defn transact!
@@ -207,44 +214,42 @@
 ;; page.
 ;;
 
-;; Validation is debug-only.
-(when ^boolean goog.DEBUG
-  (defonce db-schema (atom {:src {}}))
+(defonce db-schema (atom {:src {}}))
 
 
-  (defn register-app-db-key!
-    "Registers the malli schema for a new top-level app-db key."
-    ([db-key schema]
-     (register-app-db-key! db-key {} schema))
-    ([db-key opts schema]
-     (swap! db-schema #(-> %
-                           (assoc-in [:src db-key] [db-key opts schema])
-                           (dissoc :schema)))))
+(defn register-app-db-key!
+  "Registers the malli schema for a new top-level app-db key."
+  ([db-key schema]
+   (register-app-db-key! db-key {} schema))
+  ([db-key opts schema]
+   (swap! db-schema #(-> %
+                         (assoc-in [:src db-key] [db-key opts schema])
+                         (dissoc :schema)))))
 
 
-  (defn- src->schema
-    [src]
-    (m/schema (into [:map] (vals src))))
+(defn- src->schema
+  [src]
+  (m/schema (into [:map] (vals src))))
 
 
-  (defn- compiled-db-schema
-    []
-    (or (:schema @db-schema)
-        (-> (swap! db-schema (fn [{:keys [src] :as value}]
-                              (assoc value :schema (src->schema src))))
-            :schema)))
+(defn- compiled-db-schema
+  []
+  (or (:schema @db-schema)
+      (-> (swap! db-schema (fn [{:keys [src] :as value}]
+                            (assoc value :schema (src->schema src))))
+          :schema)))
 
 
-  (defn- db-errors
-    [db]
-    (-> (m/explain (compiled-db-schema) db)
-        (me/humanize)))
+(defn- db-errors
+  [db]
+  (-> (m/explain (compiled-db-schema) db)
+      (me/humanize)))
 
 
-  (defn- validate-app-db
-    [db _event]
-    (when-some [errors (db-errors db)]
-      (js/console.warn errors))))
+(defn- validate-app-db
+  [db _event]
+  (when-some [errors (db-errors db)]
+    (js/console.warn errors)))
 
 
 ;;

@@ -26,7 +26,8 @@
      [:div.icon attrs
       [:img {:src (item->icon-path item)
              :alt (:display item)
-             :title (:display item)}]])))
+             :title (:display item)
+             :loading "lazy"}]])))
 
 
 (defn item-io
@@ -39,7 +40,8 @@
       [:div.item-io-content
        [:img {:src (item->icon-path item)
               :alt (:display item)
-              :title (:display item)}]
+              :title (:display item)
+              :loading "lazy"}]
        (when amount
          [:span.amount amount])]])))
 
