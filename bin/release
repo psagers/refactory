@@ -1,0 +1,21 @@
+#!/bin/sh
+
+if test -n "$(git status --porcelain)"; then
+    git status
+    echo
+    echo >&2 'Can only release from a clean repository.'
+    exit 1
+fi
+
+# Prepare a clean build.
+rm -r public
+bin/brunch build --production
+clojure -M:cljs release app
+
+# Copy it to the root of gh-pages.
+git switch gh-pages
+cp -R public/ ./
+git add -A
+
+# Display the results. If it looks good, check in and push.
+git status
