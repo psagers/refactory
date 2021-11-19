@@ -22,6 +22,11 @@
       ;; (with-places 2)))
 
 
+(defn map-by
+  [f coll]
+  (into {} (map (juxt f identity)) coll))
+
+
 (defn compare-by
   "Turns a key function into a comparator."
   [key-fn]

@@ -1,8 +1,7 @@
 (ns refactory.app.game.indexer
   "Indexes the static game data at load time."
   (:require [clojure.string :as str]
-            [taoensso.encore :refer [keys-by]]
-            [refactory.app.util :refer [per-minute]]))
+            [refactory.app.util :refer [map-by per-minute]]))
 
 
 (defn- ingredient-index
@@ -57,10 +56,10 @@
 (defn index-game-data
   "Builds indexes based on the data from game.json."
   [data]
-  (let [id->builder (keys-by :id (:builders data))
-        id->item (keys-by :id (:items data))
-        id->recipe (keys-by :id (annotated-recipes data id->item))
-        id->schematic (keys-by :id (:schematics data))
+  (let [id->builder (map-by :id (:builders data))
+        id->item (map-by :id (:items data))
+        id->recipe (map-by :id (annotated-recipes data id->item))
+        id->schematic (map-by :id (:schematics data))
         input->recipes (ingredient-index (:recipes data) :input)
         output->recipes (ingredient-index (:recipes data) :output)]
     {:id->builder id->builder

@@ -7,6 +7,9 @@
                 {:app
                  {:init-fn refactory.app/init}}
 
+                :compiler-options
+                {:externs ["datascript/externs.js"]}
+
                 :dev
                 {:compiler-options
                  {:closure-defines
@@ -16,10 +19,15 @@
                 :release
                 {:build-options
                  {:ns-aliases
-                  {day8.re-frame.tracing day8.re-frame.tracing-stubs}}}
+                  {day8.re-frame.tracing day8.re-frame.tracing-stubs
+                   malli.core refactory.stubs.malli.core
+                   malli.error refactory.stubs.malli.error
+                   portal.web refactory.stubs.portal.web}}}
 
                 :devtools
-                {;;:preloads [day8.re-frame-10x.preload]
+                {:preloads [refactory.app.dev.portal]
+                            ;; day8.re-frame-10x.preload
+
                  :watch-dir "public"
                  :watch-path "/"}}}
 

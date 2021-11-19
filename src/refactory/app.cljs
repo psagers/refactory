@@ -1,7 +1,5 @@
 (ns refactory.app
-  (:require [day8.re-frame.forward-events-fx]
-            [day8.re-frame.http-fx]
-            [portal.web]
+  (:require [day8.re-frame.http-fx]
             [re-frame.core :as rf]
             [reagent.core :as r]
             [reagent.dom :as rdom]
@@ -155,10 +153,6 @@
 
 (defn init
   []
-  (when ^boolean goog.DEBUG
-    (add-tap #'portal.web/submit)
-    (portal.web/open))
-
   (db/init)
 
   (rf/dispatch-sync [::init])
