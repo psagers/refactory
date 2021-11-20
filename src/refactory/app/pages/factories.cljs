@@ -1,5 +1,6 @@
 (ns refactory.app.pages.factories
   (:require [clojure.walk :as walk]
+            [clojure.spec.alpha :as s]
             [datascript.core :as ds]
             [fork.re-frame :as fork]
             [re-frame.core :as rf]
@@ -14,24 +15,6 @@
             [refactory.app.ui.modal :as modal]
             [refactory.app.ui.recipes :as recipes]
             [refactory.app.util :refer [compare-by forall per-minute]]))
-
-
-(when ^boolean goog.DEBUG
-  (db/register-app-db-key! ::ui {:optional true}
-                           [:map
-                            [:new-factory-form {:optional true}
-                             [:map
-                              [:title :string]
-                              [:mode [:enum :continuous :fixed]]]]
-
-                            [:factory-name-input {:optional true}
-                             :string]
-
-                            [:overdrive-inputs {:optional true}
-                             [:map-of :int :int]]
-
-                            [:job-count-inputs {:optional true}
-                             [:map-of :int :int]]]))
 
 
 (defmethod pages/config :factories
@@ -916,8 +899,7 @@
               :prevent-default? true
               :clean-on-unmount? true
               :initial-values {:factory/mode "continuous"}
-              :validation forms/values->errors
-              :on-submit (forms/values-dispatch [::new-factory])}
+              :on-submit (forms/on-submit [::new-factory])}
    new-factory-form])
 
 
@@ -960,7 +942,7 @@
         output-totals @(rf/subscribe [::factory-output-totals factory-id])]
     [:div.ml-auto.has-text-right {:style {:position "sticky"
                                           :top "1rem"}}
-      [:table.table.ml-auto
+      [:table.table.is-fullwidth
        [:thead
         [:tr
          [:th (when continuous? "/min:")]

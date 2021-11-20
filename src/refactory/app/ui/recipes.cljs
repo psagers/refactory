@@ -134,7 +134,7 @@
   ::set-search-text
   (fn [{:keys [db]} [_ text sync?]]
     (when-some [{:keys [debouncer]} (::chooser db)]
-      (let [text (or text "")]
+      (let [text (or (some-> text str/lower-case) "")]
         {:db (assoc-in db [::chooser :search-text] text)
          :fx [(if sync?
                 [:dispatch [::update-search-term]]
@@ -262,6 +262,7 @@
          [:div.control.has-icons-right
           [:input.input.is-rounded {:type "text"
                                     :placeholder "Search by name or output"
+                                    :autoFocus true
                                     :value search-text
                                     :on-change #(rf/dispatch-sync [::set-search-text (-> % .-target .-value)])}]
           [:span.icon.is-right

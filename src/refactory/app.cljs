@@ -1,5 +1,6 @@
 (ns refactory.app
-  (:require [day8.re-frame.http-fx]
+  (:require [clojure.spec.alpha :as s]
+            [day8.re-frame.http-fx]
             [re-frame.core :as rf]
             [reagent.core :as r]
             [reagent.dom :as rdom]
@@ -11,8 +12,8 @@
 
 
 (when ^boolean goog.DEBUG
-  (db/register-app-db-key! ::page :keyword)
-  (db/register-app-db-key! ::expanded-navbars [:set :keyword]))
+  (s/def ::page keyword?)
+  (s/def ::expanded-navbars (s/coll-of keyword?, :kind set?)))
 
 
 ;;

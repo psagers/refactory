@@ -1,13 +1,19 @@
 (ns refactory.app.db
-  (:require [datascript.core :as ds]
+  (:require [clojure.spec.alpha :as s]
+            [datascript.core :as ds]
+            [expound.alpha :as expound]
             [goog.functions :refer [debounce]]
-            [malli.core :as m]
-            [malli.error :as me]
             [posh.reagent]
             [re-frame.core :as rf]
             [re-frame.db]
             [re-posh.core :as rp]
-            [re-posh.db]))
+            [re-posh.db]
+            [taoensso.encore :refer [as-?bool as-?int as-?kw as-?nblank-trim
+                                     as-?nat-int]]))
+
+
+(when ^boolean goog.DEBUG
+  (s/def ::dirty? boolean?))
 
 
 ;;
@@ -19,42 +25,41 @@
 
 ;; Our full DataScript schema is here. This may include some of our own keys:
 ;;
-;;   :app/default: Usable by queries to fill in consistent default values for
-;;                 missing attributes.
-;;   :app/malli: An optional malli schema to validate attribute values. These
-;;               are only used to log validation warnings during development.
+;;   :app/kind: An optional type identifier for decoding form inputs.
+;;   :app/default: An optional default value for forms, queries, etc.
 ;;
 (def ds-schema
   {;; Each page gets a record to store any page-global state.
    :page/id {:db/unique :db.unique/identity
-             :app/malli :keyword}
+             :app/kind :keyword}
 
    ;; For example, [:page/id :factories] will hold the currently selected
    ;; factory.
    :factories/selected {:db/valueType :db.type/ref
-                        :app/malli :int}
+                        :app/kind :int}
 
    ;; Factories and their components (refactory.app.pages.factories).
    :factory/title {:db/index true
-                   :app/malli [:string {:min 1, :max 30}]}
-   :factory/mode {:app/default :continuous
-                  :app/malli [:and :keyword [:enum :continuous :fixed]]}
+                   :app/kind :string
+                   :app/default "New Factory"}
+   :factory/mode {:app/kind :keyword
+                  :app/default :continuous}
    :factory/jobs {:db/valueType :db.type/ref
                   :db/cardinality :db.cardinality/many
                   :db/isComponent true}
 
-   :job/recipe-id {:app/malli :string}
-   :job/disabled? {:app/malli :boolean}
+   :job/recipe-id {}
+   :job/disabled? {:app/kind :boolean}
    ;; Number of iterations (for :fixed mode)
-   :job/count {:app/default 1
-               :app/malli 'nat-int?}
+   :job/count {:app/kind :int
+               :app/default 1}
    ;; Distinct builders (for :continuous mode)
    :job/instances {:db/valueType :db.type/ref
                    :db/cardinality :db.cardinality/many
                    :db/isComponent true}
 
-   :instance/overdrive {:app/default 100
-                        :app/malli [:int {:min 0, :max 250}]}})
+   :instance/overdrive {:app/kind :int
+                        :app/default 100}})
 
 
 (defn ds
@@ -63,29 +68,100 @@
   @@re-posh.db/store)
 
 
+(defn attr->kind
+  [attr]
+  (get-in ds-schema [attr :app/kind]))
+
+
 (defn attr->default
   [attr]
   (get-in ds-schema [attr :app/default]))
 
 
-(defn attr->malli-schema
-  [attr]
-  (get-in ds-schema [attr :app/malli]))
+(defmulti decode-kind
+  "Decodes a value according to :app/kind.
+
+  This is mostly used to decode strings from form submissions, but can also be
+  useful for validation. Implementations must be idempotent."
+  (fn [_value kind] kind))
+
+(defmethod decode-kind :default
+  [value _]
+  value)
+
+(defmethod decode-kind :keyword
+  [value _]
+  (as-?kw value))
+
+(defmethod decode-kind :int
+  [value _]
+  (as-?int value))
+
+(defmethod decode-kind :boolean
+  [value _]
+  (as-?bool (as-?bool value)))
+
+
+(defmulti decode-attr
+  "Decodes a value according to attribute name.
+
+  This can apply additional attribute-specific decoding on top of decode-kind.
+  It should only be given values of the correct type and should also be
+  idempotent. This is mainly used for rejecting values that don't meet more
+  specific validation criteria (by returning nil)."
+  (fn [_value attr] attr))
+
+(defmethod decode-attr :default
+  [value _]
+  value)
+
+(defmethod decode-attr :factory/title
+  [value _]
+  (as-?nblank-trim value))
+
+(defmethod decode-attr :factory/mode
+  [value _]
+  (#{:continuous :fixed} value))
+
+(defmethod decode-attr :job/count
+  [value _]
+  (as-?nat-int value))
+
+(defmethod decode-attr :instance/overdrive
+  [value _]
+  (when (<= 0 value 250)
+    value))
+
+
+(defn decode-value
+  "Attempts to decode the string representation of a value.
+
+  If decoding fails, this will return nil or optionally substitute the default
+  value (if any)."
+  ([attr value]
+   (decode-value attr value {}))
+  ([attr value {:keys [default?]}]
+   (let [kind (attr->kind attr)]
+     (cond-> value
+       kind     (some-> (decode-kind kind))
+       attr     (some-> (decode-attr attr))
+       default? (or (attr->default attr))))))
 
 
 (defn- validate-tx-report
+  "For development only: warns of invalid values inserted into DataScript."
   [{:keys [tx-data]}]
   (if (empty? tx-data)
     (js/console.warn "Transaction affected no datoms.")
-    (doseq [[eid attr value _timestamp added?] tx-data]
+    (doseq [[eid attr value _time added?] tx-data]
       (when added?
-        (when-some [schema (attr->malli-schema attr)]
-          (when-not (m/validate schema value)
-            (doseq [msg (me/humanize (m/explain schema value))]
-              (js/console.warn (pr-str [eid attr value]) "- value" msg))))))))
+        (let [decoded (decode-value attr value)]
+          (when-not (= decoded value)
+            (js/console.warn (pr-str [eid attr value]) "did not decode to itself:" (pr-str decoded))))))))
 
 
 (defn- tap-datoms
+  "For development only: report DataScript activity."
   [{:keys [tx-data]}]
   (doseq [datom tx-data]
     (tap> (vec datom))))
@@ -96,7 +172,8 @@
 ;;
 ;; On save, we use DataScript's serialization to store the entire database,
 ;; including the schema and indexes. On load, we deserialize the database and
-;; then extract the datoms and combine them with the latest schema
+;; then extract the datoms and combine them with the latest schema. It's a kind
+;; of naive migration for backwards-compatible schema changes.
 ;;
 
 (def STORAGE-KEY "autosave")
@@ -214,42 +291,12 @@
 ;; page.
 ;;
 
-(defonce db-schema (atom {:src {}}))
 
-
-(defn register-app-db-key!
-  "Registers the malli schema for a new top-level app-db key."
-  ([db-key schema]
-   (register-app-db-key! db-key {} schema))
-  ([db-key opts schema]
-   (swap! db-schema #(-> %
-                         (assoc-in [:src db-key] [db-key opts schema])
-                         (dissoc :schema)))))
-
-
-(defn- src->schema
-  [src]
-  (m/schema (into [:map] (vals src))))
-
-
-(defn- compiled-db-schema
-  []
-  (or (:schema @db-schema)
-      (-> (swap! db-schema (fn [{:keys [src] :as value}]
-                            (assoc value :schema (src->schema src))))
-          :schema)))
-
-
-(defn- db-errors
-  [db]
-  (-> (m/explain (compiled-db-schema) db)
-      (me/humanize)))
-
-
-(defn- validate-app-db
-  [db _event]
-  (when-some [errors (db-errors db)]
-    (js/console.warn errors)))
+(when ^boolean goog.DEBUG
+  (defn- validate-app-db
+    [db _event]
+    (when-not (s/valid? (s/keys) db)
+      (js/console.warn (expound/expound-str (s/keys) db)))))
 
 
 ;;
