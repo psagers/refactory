@@ -1,7 +1,7 @@
 (ns refactory.app.pages)
 
 
-(defmulti config
+(defmulti page-config
   "Configuration for each page. Should return a map with any of our supported
   keys:
 
@@ -11,6 +11,6 @@
   identity)
 
 
-(defmethod config :default
+(defmethod page-config :default
   [_]
   {})

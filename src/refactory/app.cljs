@@ -1,19 +1,14 @@
 (ns refactory.app
-  (:require [clojure.spec.alpha :as s]
-            [day8.re-frame.http-fx]
+  (:require [day8.re-frame.http-fx]
             [re-frame.core :as rf]
             [reagent.core :as r]
             [reagent.dom :as rdom]
             [refactory.app.db :as db]
             [refactory.app.game :as game]
             [refactory.app.pages :as pages]
+            [refactory.app.pages.config :as config]
             [refactory.app.pages.factories :as factories]
             [refactory.app.ui.modal :as modal]))
-
-
-(when ^boolean goog.DEBUG
-  (s/def ::page keyword?)
-  (s/def ::expanded-navbars (s/coll-of keyword?, :kind set?)))
 
 
 ;;
@@ -36,9 +31,9 @@
   ::switch-to
   (fn [db [_ page]]
     (let [old (::page db)]
-      {:fx [(when-some [leave (:leave (pages/config old))]
+      {:fx [(when-some [leave (:leave (pages/page-config old))]
               [:dispatch leave])
-            (when-some [enter (:enter (pages/config page))]
+            (when-some [enter (:enter (pages/page-config page))]
               [:dispatch enter])
             [:dispatch [::set-page page]]]})))
 
@@ -111,6 +106,7 @@
       (case @page
         :blank nil
         :factories [factories/root]
+        :config [config/root]
         [nyi])]
 
      (when @modal-opts

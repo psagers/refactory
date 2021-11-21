@@ -1,6 +1,5 @@
 (ns refactory.app.pages.factories
   (:require [clojure.walk :as walk]
-            [clojure.spec.alpha :as s]
             [datascript.core :as ds]
             [fork.re-frame :as fork]
             [re-frame.core :as rf]
@@ -17,7 +16,13 @@
             [refactory.app.util :refer [compare-by forall per-minute]]))
 
 
-(defmethod pages/config :factories
+(defmethod db/ds-migration ::_
+  [_ ds]
+  (when-not (ds/entid ds [:page/id :factories])
+    [[:db/add -1 :page/id :factories]]))
+
+
+(defmethod pages/page-config :factories
   []
   {:enter [::enter]
    :leave [::leave]})
@@ -654,227 +659,25 @@
 ;; Components
 ;;
 
-;; (defn- overdrive-display
-;;   [instance-id]
-;;   (let [instance @(rf/subscribe [::instance instance-id])]
-;;     [:div.field.has-addons
-;;      [:div.control
-;;       [:input.input.is-small
-;;        {:type "text"
-;;         :readOnly true
-;;         :size 5
-;;         :value (str (:instance/overdrive instance default-overdrive) "%")}]]
-
-;;      [:div.control
-;;       [:button.button.is-small
-;;        {:on-click #(rf/dispatch [::edit-overdrive instance-id])}
-;;        [:span.icon [:i.bi-pencil]]]]]))
-
-
-;; (defn- overdrive-input
-;;   [instance-id]
-;;   (let [value @(rf/subscribe [::overdrive-input instance-id])]
-;;     [:div.field.has-addons
-;;      [:div.control
-;;       [:input.input.is-small
-;;        {:type "number", :size 5
-;;         :min 0, :max 250
-;;         :value value
-;;         :on-change #(rf/dispatch-sync [::type-overdrive-input instance-id (-> % .-target .-value js/parseInt)])}]]
-
-;;      [:div.control
-;;       [:button.button.is-small
-;;        {:on-click #(rf/dispatch [::save-overdrive instance-id])}
-;;        [:span.icon [:i.bi-check]]]]]))
-
-
-;; (defn- overdrive-field
-;;   [instance-id]
-;;   (let [value @(rf/subscribe [::overdrive-input instance-id])]
-;;     (if value
-;;       [overdrive-input instance-id]
-;;       [overdrive-display instance-id])))
-
-
-;; (defn- instance-rows
-;;   [job-id]
-;;   (let [job @(rf/subscribe [::job job-id])
-;;         instance-ids @(rf/subscribe [::sorted-instance-ids job-id])
-;;         builder (-> job :job/recipe-id game/id->recipe :builder-id game/id->builder)]
-;;     [:<>
-;;      (for [instance-id instance-ids]
-;;        ^{:key instance-id}
-;;        [:div.field.is-horizontal.is-flex
-;;         [:div.field-label.is-small
-;;          (:display builder)]
-
-;;         [:div.field-body.ml-2
-;;          [overdrive-field instance-id]]
-
-;;         [:button.button.is-white.is-small
-;;          {:on-click #(rf/dispatch [::delete-instance instance-id])}
-;;          [:span.icon [:i.bi-x-lg]]]])]))
-
-
-(defn- job-count-display
-  [job-id]
-  (let [job @(rf/subscribe [::job job-id])]
-    [:div.field.has-addons
-     [:div.control
-      [:input.input.is-small
-       {:type "text"
-        :readOnly true
-        :size 5
-        :value (str (:job/count job default-job-count))}]]
-
-     [:div.control
-      [:button.button.is-small
-       {:on-click #(rf/dispatch [::edit-job-count job-id])}
-       [:span.icon [:i.bi-pencil]]]]]))
-
-
-(defn- job-count-input
-  [job-id]
-  (let [value @(rf/subscribe [::job-count-input job-id])]
-    [:div.field.has-addons
-     [:div.control
-      [:input.input.is-small
-       {:type "number", :size 5
-        :min 0
-        :value value
-        :on-change #(rf/dispatch-sync [::type-job-count-input job-id (-> % .-target .-value js/parseInt)])}]]
-
-     [:div.control
-      [:button.button.is-small
-       {:on-click #(rf/dispatch [::save-job-count job-id])}
-       [:span.icon [:i.bi-check]]]]]))
-
-
-(defn- job-count
-  [job-id]
-  (let [input-value @(rf/subscribe [::job-count-input job-id])]
-    [:div.field.is-horizontal.is-flex
-     [:div.field-label.is-small "Count"]
-     [:div.field-body.ml-2
-      (if input-value
-        [job-count-input job-id]
-        [job-count-display job-id])]]))
-
-
 (defn- job-actions
   [job-id]
   (let [{:job/keys [disabled? recipe-id]} @(rf/subscribe [::job job-id])]
-        ;; mode @(rf/subscribe [::job-mode job-id])]
     [:div.dropdown.is-hoverable
      [:div.dropdown-trigger
       [:button.button.is-white
-       [:span.icon [:i.bi-gear]]]]
+       [:span.icon [:i.bi-three-dots]]]]
      [:div.dropdown-menu.has-text-left
       [:div.dropdown-content
-       [:a.dropdown-item {:href "#"
-                          :on-click (ui/link-dispatch [::modal/show ::recipes/details {:recipe-id recipe-id}])}
+       [:a.dropdown-item {:on-click (ui/link-dispatch [::modal/show ::recipes/details {:recipe-id recipe-id}])}
         "Show recipe"]
-       ;; (when (= mode :continuous)
-       ;;   [:a.dropdown-item {:href "#"
-       ;;                      :on-click (ui/link-dispatch [::add-instance job-id])}
-       ;;    "Add builder"])
        [:hr.dropdown-divider]
        (if disabled?
-         [:a.dropdown-item {:href "#"
-                            :on-click (ui/link-dispatch [::set-job-enabled job-id true])}
+         [:a.dropdown-item {:on-click (ui/link-dispatch [::set-job-enabled job-id true])}
           "Enable"]
-         [:a.dropdown-item {:href "#"
-                            :on-click (ui/link-dispatch [::set-job-enabled job-id false])}
+         [:a.dropdown-item {:on-click (ui/link-dispatch [::set-job-enabled job-id false])}
           "Disable"])
-       [:a.dropdown-item.has-text-danger {:href "#"
-                                          :on-click (ui/link-dispatch [::delete-job job-id])}
+       [:a.dropdown-item.has-text-danger {:on-click (ui/link-dispatch [::delete-job job-id])}
         "Delete"]]]]))
-
-
-;; (defn- job-flows
-;;   [job-id]
-;;   (let [flows @(rf/subscribe [::job-flows job-id])]
-;;     [:div
-;;      (forall [[item-id rate] flows]
-;;        ^{:key item-id}
-;;        [:div.is-flex.is-justify-content-space-between
-;;         [:div.is-inline-flex (recipes/item-icon item-id) [:span.ml-2 (:display (game/id->item item-id))]]
-;;         [:span.is-family-monospace (format-signed rate) "/min"]])]))
-
-
-;; (defn- job-counts
-;;   [job-id]
-;;   (let [counts @(rf/subscribe [::job-counts job-id])]
-;;     [:div
-;;      (forall [[item-id quantity] counts]
-;;        ^{:key item-id}
-;;        [:div.is-flex.is-justify-content-space-between
-;;         [:div.is-inline-flex (recipes/item-icon item-id) [:span.ml-2 (:display (game/id->item item-id))]]
-;;         [:span.is-family-monospace (format-signed quantity)]])]))
-
-
-;; (defn- job-card
-;;   [job-id]
-;;   (let [job @(rf/subscribe [::job job-id])
-;;         mode @(rf/subscribe [::job-mode job-id])
-;;         continuous? (= mode :continuous)
-;;         disabled? (:job/disabled? job)
-;;         recipe (game/id->recipe (:job/recipe-id job))]
-;;     [:div.card.job-card
-;;      [:div.card-header
-;;       [:div.card-header-icon (let [{:keys [item-id amount]} (-> recipe :output first)]
-;;                                (recipes/item-io item-id (when-not continuous? amount)))]
-;;       [:div.card-header-title (:display recipe) (when disabled? " (DISABLED)")]
-;;       [:div.card-header-icon
-;;        [job-actions job-id]]]
-;;      [:div.card-content
-;;       (case mode
-;;         :continuous [instance-rows job-id]
-;;         :fixed [job-count job-id]
-;;         nil)
-;;       [:hr.hr]
-;;       (case mode
-;;         :continuous [job-flows job-id]
-;;         :fixed [job-counts job-id]
-;;         nil)]]))
-
-
-;; (defn- factory-jobs
-;;   [factory-id]
-;;   (let [job-ids @(rf/subscribe [::sorted-job-ids factory-id])]
-;;     [:div
-;;      [:div.columns.is-multiline
-;;       (forall [job-id job-ids]
-;;         ^{:key job-id}
-;;         [:div.column.is-4-widescreen.is-6-desktop
-;;           [job-card job-id]])
-
-;;       [:div.column.is-4-widescreen.is-6-desktop
-;;        [:div.card
-;;         [:div.card-header
-;;          [:div.card-header-title]
-;;          [:div.card-header-icon [:span.icon.is-medium]]]
-;;         [:div.card-content.has-text-centered
-;;          [:button.button.is-primary {:on-click #(rf/dispatch [::recipes/show-chooser {:on-success [::add-job factory-id]}])}
-;;           "Add a recipe"]]]]]]))
-
-
-;; (defn- instance-row
-;;   [instance-id]
-;;   (let [{:instance/keys [overdrive]} @(rf/subscribe [::instance instance-id])]
-;;     [:tr
-;;      [:td]
-;;      [:td {:colSpan 3}
-;;       [:div.is-flex.is-flex-wrap-wrap
-;;        [:div.field.has-addons
-;;         [:div.control
-;;          [:input.input.is-small {:type "number", :size 5
-;;                                  :min 0, :max 250
-;;                                  :value overdrive
-;;                                  :on-change #(rf/dispatch [::set-overdrive instance-id (-> % .-target .-value)])}]]
-;;         [:div.control
-;;          [:a.button.is-static.is-small "%"]]]]]
-;;      [:td {:colSpan 2}]]))
 
 
 (defn- expanded-job-row
@@ -973,7 +776,7 @@
       [:tr
        [:th "Job"]
        [:th {:colSpan 2}
-        (if continuous? "#" "Build count")]
+        (if continuous? "Builders" "Build count")]
        [:th (if continuous? "Flows (/min)" "Unit counts")]
        [:th]]]
      [:tbody
@@ -982,12 +785,11 @@
         [job-row job-id])]
      [:tfoot
       [:tr
-       [:th]
-       [:th (when continuous? (or instance-count 0))]
-       [:th]
-       [:th.has-text-right {:colSpan 2}
+       [:th.has-text-left
         [:button.button.is-primary {:on-click #(rf/dispatch [::recipes/show-chooser {:on-success [::add-job factory-id]}])}
-         "Add a recipe"]]]]]))
+         "Add a job"]]
+       [:th (when continuous? (or instance-count 0))]
+       [:th {:colSpan 3}]]]]))
 
 
 (defmethod modal/content ::rename-factory

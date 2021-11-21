@@ -2,6 +2,7 @@
   "Recipe UI."
   (:require [clojure.string :as str]
             [re-frame.core :as rf]
+            [re-posh.core :as rp]
             [reagent.core :as r]
             [refactory.app.game :as game]
             [refactory.app.ui.modal :as modal]
@@ -201,13 +202,28 @@
     (:search-term state)))
 
 
+(rp/reg-query-sub
+  ::locked-schematic-ids
+  '[:find [?recipe-id ...]
+    :where [?e :page/id :config]
+           [?e :config/locked-schematic-ids ?recipe-id]])
+
+
+(rf/reg-sub
+  ::unlocked-recipe-ids
+  :<- [::locked-schematic-ids]
+  (fn [locked-ids _]
+    (game/unlocked-recipe-ids locked-ids)))
+
+
 (rf/reg-sub
   ::chooser-recipe-ids
+  :<- [::unlocked-recipe-ids]
   :<- [::chooser-search-term]
-  (fn [term _]
+  (fn [[recipe-ids term] _]
     (letfn [(recipe-matches? [recipe]
               (some #(str/includes? % term) (:search-terms recipe)))]
-      (cond->> (game/sorted-recipe-ids)
+      (cond->> (sort-by game/recipe-sort-key recipe-ids)
         (not-empty term)
         (filter (comp recipe-matches? game/id->recipe))))))
 

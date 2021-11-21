@@ -10,7 +10,7 @@ fi
 # Prepare a clean build.
 rm -r public
 bin/brunch build --production
-clojure -M:cljs release app
+clojure -M:release:cljs release app
 
 # Copy it to the root of gh-pages.
 git switch gh-pages

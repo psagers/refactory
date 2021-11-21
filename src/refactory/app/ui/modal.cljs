@@ -46,10 +46,9 @@
 
 ;; Standard confirmation modal
 (defmethod content ::confirm-action
-  [{::keys [modal-id], :keys [title text button-label danger? on-confirm]}]
+  [{::keys [modal-id], :keys [text button-label danger? on-confirm]}]
   [:div.modal-card
    [:header.modal-card-head {:class []}]
-    ;; [:p.modal-card-title title]]
    [:section.modal-card-body
     [:p text]]
    [:footer.modal-card-foot.is-justify-content-end

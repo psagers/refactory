@@ -31,17 +31,45 @@
   (get-in @index [:output->recipes item-id]))
 
 
+(defn recipe-sort-key
+  [recipe-id]
+  ((juxt :value :display) (id->recipe recipe-id)))
+
+
 (defn -sorted-recipe-ids
   []
-  (sort-by #((juxt :value :display) (id->recipe %))
-           (keys (:id->recipe @index))))
+  (sort-by recipe-sort-key (keys (:id->recipe @index))))
 
 
 (def sorted-recipe-ids (memoize -sorted-recipe-ids))
 
 
-(comment
-  (id->recipe "Recipe_Alternate_RecycledRubber_C"))
+(defn schematics
+  []
+  (vals (@index :id->schematic)))
+
+
+(defn schematic-ids
+  []
+  (keys (@index :id->schematic)))
+
+
+(defn -base-recipe-ids
+  "Recipe IDs not referenced by any schematic. These are always available."
+  []
+  (->> (keys (:id->recipe @index))
+       (remove (set (mapcat :recipe-ids (schematics))))
+       (set)))
+
+
+(def base-recipe-ids (delay (-base-recipe-ids)))
+
+
+(defn unlocked-recipe-ids
+  [locked-schematic-ids]
+  (let [unlocked-schematic-ids (remove (set locked-schematic-ids) (schematic-ids))
+        additional-recipe-ids (mapcat (comp :recipe-ids id->schematic) unlocked-schematic-ids)]
+    (set (concat @base-recipe-ids additional-recipe-ids))))
 
 
 ;;
@@ -54,7 +82,7 @@
     {:fx [[:http-xhrio {:method :get
                         :uri "game.json"
                         :response-format (ajax/json-response-format {:keywords? true})
-                        :on-success [::load-index opts] 
+                        :on-success [::load-index opts]
                         :on-fail [::fetch-failed opts]}]]}))
 
 
@@ -67,8 +95,7 @@
 (rf/reg-event-fx
   ::load-index
   (fn [_ [_ {:keys [on-success]} result]]
-    {;; :db (assoc db ::index (index-game-data result))
-     :fx [[::install-index (indexer/index-game-data result)]
+    {:fx [[::install-index (indexer/index-game-data result)]
           (when on-success
             [:dispatch on-success])]}))
 

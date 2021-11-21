@@ -10,16 +10,10 @@
   (. number-formatter format n))
 
 
-;; (defn with-places
-;;   [value places]
-;;   (js/parseFloat (.toFixed value places)))
-
-
 (defn per-minute
   [amount seconds]
   (-> (/ amount seconds)
       (* 60)))
-      ;; (with-places 2)))
 
 
 (defn map-by
@@ -45,3 +39,6 @@
                                 m))
                             (transient m)
                             m))))
+
+
+(def conj-set (fnil conj #{}))

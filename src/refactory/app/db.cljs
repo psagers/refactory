@@ -1,7 +1,5 @@
 (ns refactory.app.db
-  (:require [clojure.spec.alpha :as s]
-            [datascript.core :as ds]
-            [expound.alpha :as expound]
+  (:require [datascript.core :as ds]
             [goog.functions :refer [debounce]]
             [posh.reagent]
             [re-frame.core :as rf]
@@ -10,10 +8,6 @@
             [re-posh.db]
             [taoensso.encore :refer [as-?bool as-?int as-?kw as-?nblank-trim
                                      as-?nat-int]]))
-
-
-(when ^boolean goog.DEBUG
-  (s/def ::dirty? boolean?))
 
 
 ;;
@@ -32,6 +26,10 @@
   {;; Each page gets a record to store any page-global state.
    :page/id {:db/unique :db.unique/identity
              :app/kind :keyword}
+
+   ;; Schematics that are still locked; their recipes should not be offered in
+   ;; the UI.
+   :config/locked-schematic-ids {:db/cardinality :db.cardinality/many}
 
    ;; For example, [:page/id :factories] will hold the currently selected
    ;; factory.
@@ -266,7 +264,7 @@
   ([datoms]
    (transact! datoms nil))
   ([datoms tx-meta]
-   (posh.reagent/transact! @re-posh.db/store datoms tx-meta)))
+   (ds/transact! @re-posh.db/store datoms tx-meta)))
 
 
 (rf/reg-fx
@@ -283,30 +281,30 @@
 
 
 ;;
-;; app-db
-;;
-;; Although DataScript holds all persistent data, we still use the app-db for
-;; some transient UI state. Nothing in the app-db gets saved to storage and
-;; much of it will get cleared every time the user switches to a different
-;; page.
-;;
-
-
-(when ^boolean goog.DEBUG
-  (defn- validate-app-db
-    [db _event]
-    (when-not (s/valid? (s/keys) db)
-      (js/console.warn (expound/expound-str (s/keys) db)))))
-
-
-;;
 ;; Initialization
 ;;
+
+(defmulti ds-migration
+  "A hook for migrating new or loaded DataScript databases.
+
+  Interested parties should register a method with a unique key. All registered
+  methods will be called (in no particular order) and may return a sequence of
+  DataScript transactions to apply. This must be an idempotent operation."
+  (fn [client-id _ds] client-id))
+
+
+(defn- migrate-ds!
+  "Runs all DataScript migrations."
+  [conn]
+  (ds/transact! conn (mapcat #(ds-migration % @conn)
+                             (keys (methods ds-migration)))))
+
 
 (defn init
   []
   (let [conn (or (create-conn-from-storage)
                  (ds/create-conn ds-schema))]
+    (migrate-ds! conn)
     (rp/connect! conn)
 
     ;; Queue auto-save after every DataScript transaction.
@@ -315,7 +313,6 @@
     (when ^boolean goog.DEBUG
       ;; Install validation hooks for development.
       (ds/listen! conn validate-tx-report)
-      (rf/reg-global-interceptor (rf/after validate-app-db))
 
       ;; Report all DataScript changes to portal.
       (ds/listen! conn tap-datoms))))

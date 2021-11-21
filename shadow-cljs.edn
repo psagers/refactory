@@ -25,7 +25,8 @@
                    portal.web refactory.stubs.portal.web}}}
 
                 :devtools
-                {:preloads [refactory.app.dev.portal]
+                {:preloads [refactory.app.dev.specs
+                            refactory.app.dev.portal]
                             ;; day8.re-frame-10x.preload
 
                  :watch-dir "public"

@@ -3,8 +3,6 @@ $item-io-padding: 6px;
 
 
 .item-io {
-  // position: relative;
-
   width: $item-io-size + ($item-io-padding * 2) + 2px;
   height: $item-io-size + ($item-io-padding * 2) + 2px;
   flex-shrink: 0;
@@ -21,8 +19,6 @@ $item-io-padding: 6px;
     > img {
       width: 100%;
       height: 100%;
-      // width: $item-io-size;
-      // height: $item-io-size;
     }
 
     > .amount {

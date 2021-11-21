@@ -1,4 +1,8 @@
 .factory-table {
+  th {
+    text-align: left;
+  }
+
   tr.job-row td {
     vertical-align: middle;
   }
