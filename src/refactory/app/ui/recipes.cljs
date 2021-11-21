@@ -13,6 +13,36 @@
 ;; Generic recipe UI
 ;;
 
+(def amount-formatter (js/Intl.NumberFormat. js/undefined
+                                             #js {:maximumFractionDigits 1
+                                                  :useGrouping false}))
+
+(def ^:private amount-scales
+  [[0 ""]
+   [1e3 "k"]
+   [1e6 "m"]
+   [1e9 "b"]
+   [1e12 "t"]
+   [1e15 "q"]])
+
+
+(defn amount->badge
+  "Renders an amount to a string suitable for an icon badge."
+  [amount]
+  (let [[scale _ :as bracket] (last (take-while (fn [[scale _]]
+                                                  (<= scale (Math/abs amount)))
+                                                amount-scales))
+        [scale suffix] (cond
+                         (nil? bracket) (peek amount-scales)
+                         (zero? scale) (assoc bracket 0 1)
+                         :else bracket)]
+    (str (.format amount-formatter (/ amount scale)) suffix)))
+
+
+(comment
+  (map amount->badge [0 1 500 999 1000 -1500 1999 -20050 999999 1254000]))
+
+
 (defn- item->icon-path
   [item]
   (str "img/" (:icon item)))
@@ -43,19 +73,21 @@
               :title (:display item)
               :loading "lazy"}]
        (when amount
-         [:span.amount amount])]])))
+         [:span.amount (amount->badge amount)])]])))
 
 
 (defn recipe-io
   "A visual representation of a recipe."
-  [recipe-id]
-  (let [recipe (game/id->recipe recipe-id)]
-    [:div.recipe-io
-     (forall [{:keys [item-id amount]} (:input recipe)]
-       ^{:key item-id} [item-io item-id amount])
-     [:span.icon.has-text-black [:i.bi-caret-right-fill]]
-     (forall [{:keys [item-id amount]} (:output recipe)]
-       ^{:key item-id} [item-io item-id amount])]))
+  ([recipe-id]
+   (recipe-io recipe-id 1))
+  ([recipe-id factor]
+   (let [recipe (game/id->recipe recipe-id)]
+     [:div.recipe-io
+      (forall [{:keys [item-id amount]} (:input recipe)]
+        ^{:key item-id} [item-io item-id (* amount factor)])
+      [:span.icon.has-text-black [:i.bi-caret-right-fill]]
+      (forall [{:keys [item-id amount]} (:output recipe)]
+        ^{:key item-id} [item-io item-id (* amount factor)])])))
 
 
 ;;
