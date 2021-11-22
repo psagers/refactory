@@ -189,7 +189,9 @@
                               (sort)
                               (first)
                               (second))]
-      {:fx [[:transact [[:db/add [:page/id :factories] :factories/selected next-factory-id]
+      {:fx [[:transact [(if next-factory-id
+                          [:db/add [:page/id :factories] :factories/selected next-factory-id]
+                          [:db/retract [:page/id :factories] :factories/selected])
                         [:db/retractEntity factory-id]]]]})))
 
 
