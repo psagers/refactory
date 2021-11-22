@@ -4,14 +4,20 @@
             [refactory.app.util :refer [map-by per-minute]]))
 
 
-(defn- ingredient-index
-  [recipes ingr-key]
-  (reduce (fn [m [item-id recipe-id]]
-            (update m item-id (fnil conj #{}) recipe-id))
-          {}
-          (for [recipe recipes
-                input (get recipe ingr-key)]
-            [(:item-id input) (:id recipe)])))
+;; (defn- ingredient-index
+;;   [recipes ingr-key]
+;;   (reduce (fn [m [item-id recipe-id]]
+;;             (update m item-id conj-set recipe-id))
+;;           {}
+;;           (for [recipe recipes
+;;                 input (get recipe ingr-key)]
+;;             [(:item-id input) (:id recipe)])))
+
+
+(defn- annotated-items
+  [game]
+  (for [{:keys [display] :as item} (:items game)]
+    (assoc item :search-terms [(str/lower-case display)])))
 
 
 (defn- recipe->io-value
@@ -57,14 +63,14 @@
   "Builds indexes based on the data from game.json."
   [data]
   (let [id->builder (map-by :id (:builders data))
-        id->item (map-by :id (:items data))
+        id->item (map-by :id (annotated-items data))
         id->recipe (map-by :id (annotated-recipes data id->item))
-        id->schematic (map-by :id (:schematics data))
-        input->recipes (ingredient-index (:recipes data) :input)
-        output->recipes (ingredient-index (:recipes data) :output)]
+        id->schematic (map-by :id (:schematics data))]
+        ;; input->recipes (ingredient-index (:recipes data) :input)
+        ;; output->recipes (ingredient-index (:recipes data) :output)]
     {:id->builder id->builder
      :id->item id->item
      :id->recipe id->recipe
-     :id->schematic id->schematic
-     :input->recipes input->recipes
-     :output->recipes output->recipes}))
+     :id->schematic id->schematic}))
+     ;; :input->recipes input->recipes
+     ;; :output->recipes output->recipes}))

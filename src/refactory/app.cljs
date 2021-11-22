@@ -8,6 +8,7 @@
             [refactory.app.pages :as pages]
             [refactory.app.pages.config :as config]
             [refactory.app.pages.factories :as factories]
+            [refactory.app.pages.survey :as survey]
             [refactory.app.ui.modal :as modal]))
 
 
@@ -73,14 +74,14 @@
        [:a.navbar-item.is-tab {:class [(when (= @page :factories) "is-active")]
                                :on-click #(rf/dispatch [::switch-to :factories])}
         "Design"]
-       [:a.navbar-item.is-tab {:class [(when (= @page :explore) "is-active")]
-                               :on-click #(rf/dispatch [::switch-to :explore])}
-        "Explore"]]
+       [:a.navbar-item.is-tab {:class [(when (= @page :survey) "is-active")]
+                               :on-click #(rf/dispatch [::switch-to :survey])}
+        "Survey"]]
 
       [:div.navbar-end
        [:a.navbar-item.is-tab {:class [(when (= @page :config) "is-active")]
                                :on-click #(rf/dispatch [::switch-to :config])}
-        "Config"]
+        "Recipes"]
        [:a.navbar-item.is-tab {:class [(when (= @page :help) "is-active")]
                                :on-click #(rf/dispatch [::switch-to :help])}
         [:i.bi-question-circle]]]]]))
@@ -106,6 +107,7 @@
       (case @page
         :blank nil
         :factories [factories/root]
+        :survey [survey/root]
         :config [config/root]
         [nyi])]
 

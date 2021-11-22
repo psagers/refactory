@@ -6,6 +6,7 @@
             [re-frame.db]
             [re-posh.core :as rp]
             [re-posh.db]
+            [refactory.app.game :as game]
             [taoensso.encore :refer [as-?bool as-?int as-?kw as-?nblank-trim
                                      as-?nat-int]]))
 
@@ -57,7 +58,11 @@
                    :db/isComponent true}
 
    :instance/overdrive {:app/kind :int
-                        :app/default 100}})
+                        :app/default 100}
+
+   :survey/exclusivity {:app/kind :keyword
+                        :app/default :at-most}
+   :survey/item-ids {:db/cardinality :db.cardinality/many}})
 
 
 (defn ds
@@ -113,6 +118,11 @@
   [value _]
   value)
 
+(defmethod decode-attr :config/locked-schematic-ids
+  [value _]
+  (when (game/id->schematic value)
+    value))
+
 (defmethod decode-attr :factory/title
   [value _]
   (as-?nblank-trim value))
@@ -121,6 +131,11 @@
   [value _]
   (#{:continuous :fixed} value))
 
+(defmethod decode-attr :job/recipe-id
+  [value _]
+  (when (game/id->recipe value)
+    value))
+
 (defmethod decode-attr :job/count
   [value _]
   (as-?nat-int value))
@@ -128,6 +143,15 @@
 (defmethod decode-attr :instance/overdrive
   [value _]
   (when (<= 0 value 250)
+    value))
+
+(defmethod decode-attr :survey/exclusivity
+  [value _]
+  (#{:at-most :at-least} value))
+
+(defmethod decode-attr :survey/item-ids
+  [value _]
+  (when (game/id->item value)
     value))
 
 
@@ -296,8 +320,9 @@
 (defn- migrate-ds!
   "Runs all DataScript migrations."
   [conn]
-  (ds/transact! conn (mapcat #(ds-migration % @conn)
-                             (keys (methods ds-migration)))))
+  (ds/transact! conn (->> (keys (methods ds-migration))
+                          (mapcat #(ds-migration % @conn))
+                          (remove nil?))))
 
 
 (defn init

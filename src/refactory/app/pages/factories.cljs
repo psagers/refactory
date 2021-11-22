@@ -772,7 +772,7 @@
         continuous? (= (:factory/mode factory) :continuous)
         job-ids @(rf/subscribe [::sorted-job-ids factory-id])]
     [:table.table.is-fullwidth.factory-table.is-size-7.is-size-6-widescreen
-     [:thead
+     [:thead.has-text-left
       [:tr
        [:th "Job"]
        [:th {:colSpan 2}
@@ -783,11 +783,12 @@
       (forall [job-id job-ids]
         ^{:key job-id}
         [job-row job-id])]
-     [:tfoot
+     [:tfoot.has-text-left
       [:tr
        [:th.has-text-left
         [:button.button.is-primary {:on-click #(rf/dispatch [::recipes/show-chooser {:on-success [::add-job factory-id]}])}
-         "Add a job"]]
+         [:span.icon [:i.bi-plus-circle]]
+         [:span "Add a job"]]]
        [:th (when continuous? (or instance-count 0))]
        [:th {:colSpan 3}]]]]))
 
@@ -945,7 +946,7 @@
   [:a.has-text-black {:href "#"
                       :on-click (ui/link-dispatch [::recipes/show-chooser {:search-term (-> item-id game/id->item :display)
                                                                            :on-success [::add-job factory-id]}])}
-   [:span.icon [:i.bi-file-plus.is-small]]])
+   [:span.icon [:i.bi-plus-circle.is-small]]])
 
 
 (defn- factory-totals

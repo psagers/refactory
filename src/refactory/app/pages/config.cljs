@@ -18,9 +18,8 @@
 
 
 (defmethod pages/page-config :config
-  []
-  {:enter [::init-ui]
-   :leave [::reset-ui]})
+  [_]
+  {:enter [::init-ui]})
 
 
 ;;
@@ -73,6 +72,7 @@
 
 
 (defmulti menu-path->title first)
+(defmethod menu-path->title :default [_ _] "")
 
 (defmethod menu-path->title :milestones [[_ tier]] (str "Tier " tier))
 (defmethod menu-path->title :research [[_ category]] category)
@@ -96,13 +96,9 @@
 (rf/reg-event-db
   ::init-ui
   (fn [db _]
-    (assoc-in db [::ui :menu-path] [:milestones 1])))
-
-
-(rf/reg-event-db
-  ::reset-ui
-  (fn [db _]
-    (dissoc db ::ui)))
+    (cond-> db
+      (nil? (-> db ::ui :menu-path))
+      (assoc-in [::ui :menu-path] [:milestones 1]))))
 
 
 (rf/reg-event-db
@@ -208,7 +204,7 @@
     (let [schematic (game/id->schematic schematic-id)
           checked-ids @checked-ids-sub]
       [:div.my-6
-       [:h2.subtitle
+       [:label.label.is-size-5.has-text-weight-normal
         [:input {:type "checkbox"
                  :checked (contains? checked-ids schematic-id)
                  :on-change #(rf/dispatch [::set-schematic-unlocked schematic-id (-> % .-target .-checked)])}]
@@ -227,23 +223,24 @@
   []
   (let [menu-path @(rf/subscribe [::menu-path])
         schematic-ids @(rf/subscribe [::visible-schematic-ids])]
-    [:div
-     [:div.is-flex
-      [:h1.title.mb-0 (menu-path->title menu-path)]
-      [:div.dropdown.is-hoverable
-       [:div.dropdown-trigger
-        [:button.button.is-white
-         [:span.icon [:i.bi-gear]]]]
-       [:div.dropdown-menu
-        [:div.dropdown-content
-         [:a.dropdown-item {:on-click (ui/link-dispatch [::set-schematic-group-unlocked menu-path false])}
-          "Lock all"]
-         [:a.dropdown-item {:on-click (ui/link-dispatch [::set-schematic-group-unlocked menu-path true])}
-          "Unlock all"]]]]]
+    (when menu-path
+      [:div
+       [:div.is-flex
+        [:h1.title.mb-0 (menu-path->title menu-path)]
+        [:div.dropdown.is-hoverable
+         [:div.dropdown-trigger
+          [:button.button.is-white
+           [:span.icon [:i.bi-gear]]]]
+         [:div.dropdown-menu
+          [:div.dropdown-content
+           [:a.dropdown-item {:on-click (ui/link-dispatch [::set-schematic-group-unlocked menu-path false])}
+            "Lock all"]
+           [:a.dropdown-item {:on-click (ui/link-dispatch [::set-schematic-group-unlocked menu-path true])}
+            "Unlock all"]]]]]
 
-     (forall [schematic-id schematic-ids]
-       ^{:key schematic-id}
-       [schematic-form schematic-id])]))
+       (forall [schematic-id schematic-ids]
+         ^{:key schematic-id}
+         [schematic-form schematic-id])])))
 
 
 (defn root

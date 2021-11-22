@@ -2,7 +2,6 @@
   "Recipe UI."
   (:require [clojure.string :as str]
             [re-frame.core :as rf]
-            [re-posh.core :as rp]
             [reagent.core :as r]
             [refactory.app.game :as game]
             [refactory.app.ui.modal :as modal]
@@ -202,23 +201,9 @@
     (:search-term state)))
 
 
-(rp/reg-query-sub
-  ::locked-schematic-ids
-  '[:find [?recipe-id ...]
-    :where [?e :page/id :config]
-           [?e :config/locked-schematic-ids ?recipe-id]])
-
-
-(rf/reg-sub
-  ::unlocked-recipe-ids
-  :<- [::locked-schematic-ids]
-  (fn [locked-ids _]
-    (game/unlocked-recipe-ids locked-ids)))
-
-
 (rf/reg-sub
   ::chooser-recipe-ids
-  :<- [::unlocked-recipe-ids]
+  :<- [::game/unlocked-recipe-ids]
   :<- [::chooser-search-term]
   (fn [[recipe-ids term] _]
     (letfn [(recipe-matches? [recipe]
@@ -243,7 +228,7 @@
      (recipe-io recipe-id)]
     [:a.is-flex-grow-0.ml-5.has-text-black
      [:span.icon.is-large {:on-click #(rf/dispatch [::finish-chooser recipe-id])}
-      [:i.bi-file-plus]]]])
+      [:i.bi-plus-circle]]]])
 
 
 (defn- io-details
@@ -289,8 +274,8 @@
        (:display (game/id->builder builder-id)) ", " duration "s"]
       [:div.level-right
        [:button.button.is-success {:on-click #(rf/dispatch [::finish-chooser recipe-id])}
-         [:span "Add"]
-         [:span.icon.is-small [:i.bi-file-plus]]]]]]))
+         [:span.icon [:i.bi-plus-circle]]
+         [:span "Add"]]]]]))
 
 
 (defmethod modal/content ::chooser
