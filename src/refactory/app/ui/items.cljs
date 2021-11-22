@@ -88,7 +88,9 @@
       [:p.modal-card-title "Add an ingredient"]
       [:button.delete {:on-click #(rf/dispatch [::finish-chooser nil])}]]
      [:section.modal-card-body
-      [forms/search-field {:on-update [::set-search-term]}]
+      [forms/search-field {:placeholder "Search by name"
+                           :auto-focus? true
+                           :on-update [::set-search-term]}]
       [:hr.hr]
       [:div.is-flex.is-justify-content-space-between.is-flex-wrap-wrap
        (forall [item-id item-ids]

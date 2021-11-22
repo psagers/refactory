@@ -4,16 +4,6 @@
             [refactory.app.util :refer [map-by per-minute]]))
 
 
-;; (defn- ingredient-index
-;;   [recipes ingr-key]
-;;   (reduce (fn [m [item-id recipe-id]]
-;;             (update m item-id conj-set recipe-id))
-;;           {}
-;;           (for [recipe recipes
-;;                 input (get recipe ingr-key)]
-;;             [(:item-id input) (:id recipe)])))
-
-
 (defn- annotated-items
   [game]
   (for [{:keys [display] :as item} (:items game)]
@@ -48,7 +38,7 @@
 (defn- recipe->search-terms
   [id->item {:keys [display output]}]
   (cons (str/lower-case display)
-        (map #(-> % :item-id id->item :display str/lower-case) output)))
+        (mapcat #(-> % :item-id id->item :search-terms) output)))
 
 
 (defn- annotated-recipes
@@ -59,18 +49,44 @@
            :search-terms (recipe->search-terms id->item recipe))))
 
 
+(defn- schematic->search-terms
+  [id->recipe {:keys [display recipe-ids]}]
+  (cons (str/lower-case display)
+        (mapcat #(-> % id->recipe :search-terms) recipe-ids)))
+
+
+(defn- annotated-schematics
+  [game id->recipe]
+  (for [schematic (:schematics game)]
+    (assoc schematic
+           :search-terms (schematic->search-terms id->recipe schematic))))
+
+
+(defn- add-builders
+  [index game]
+  (assoc index :id->builder (map-by :id (:builders game))))
+
+
+(defn- add-items
+  [index game]
+  (assoc index :id->item (map-by :id (annotated-items game))))
+
+
+(defn- add-recipes
+  [{:keys [id->item] :as index} game]
+  (assoc index :id->recipe (map-by :id (annotated-recipes game id->item))))
+
+
+(defn- add-schematics
+  [{:keys [id->recipe] :as index} game]
+  (assoc index :id->schematic (map-by :id (annotated-schematics game id->recipe))))
+
+
 (defn index-game-data
   "Builds indexes based on the data from game.json."
-  [data]
-  (let [id->builder (map-by :id (:builders data))
-        id->item (map-by :id (annotated-items data))
-        id->recipe (map-by :id (annotated-recipes data id->item))
-        id->schematic (map-by :id (:schematics data))]
-        ;; input->recipes (ingredient-index (:recipes data) :input)
-        ;; output->recipes (ingredient-index (:recipes data) :output)]
-    {:id->builder id->builder
-     :id->item id->item
-     :id->recipe id->recipe
-     :id->schematic id->schematic}))
-     ;; :input->recipes input->recipes
-     ;; :output->recipes output->recipes}))
+  [game]
+  (-> {}
+      (add-builders game)
+      (add-items game)
+      (add-recipes game)
+      (add-schematics game)))

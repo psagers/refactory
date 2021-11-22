@@ -26,12 +26,6 @@
 (defn id->schematic [schematic-id]
   (get-in @index [:id->schematic schematic-id]))
 
-;; (defn input->recipes [item-id]
-;;   (get-in @index [:input->recipes item-id]))
-
-;; (defn output->recipes [item-id]
-;;   (get-in @index [:output->recipes item-id]))
-
 
 ;;
 ;; Schematic utils

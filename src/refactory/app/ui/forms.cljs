@@ -7,14 +7,14 @@
 
 
 (defn search-field
-  [{:keys [interval on-update] :or {interval 350}}]
+  [{:keys [placeholder auto-focus? interval on-update] :or {interval 350}}]
   (r/with-let [text (ratom/atom "")
                update-now (fn [value] (rf/dispatch (conj on-update value)))
                update-soon (debounce update-now interval)]
     [:div.control.has-icons-right
      [:input.input.is-rounded {:type "text"
-                               :placeholder "Search by name or output"
-                               :autoFocus true
+                               :placeholder (or placeholder "")
+                               :autoFocus auto-focus?
                                :value @text
                                :on-change #(let [value (-> % .-target .-value)]
                                              (reset! text value)

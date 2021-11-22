@@ -1,12 +1,13 @@
 (ns refactory.app.pages.config
-  (:require [datascript.core :as ds]
-            [reagent.core :as r]
+  (:require [clojure.string :as str]
+            [datascript.core :as ds]
             [re-frame.core :as rf]
             [re-posh.core :as rp]
             [refactory.app.db :as db]
             [refactory.app.game :as game]
             [refactory.app.pages :as pages]
             [refactory.app.ui :as ui]
+            [refactory.app.ui.forms :as forms]
             [refactory.app.ui.recipes :as recipes]
             [refactory.app.util :refer [conj-set forall]]))
 
@@ -27,8 +28,8 @@
 ;;
 
 (def research-category-id->title
-  {"ACarapace" "Alien Carapace"
-   "AOrgans" "Alien Organs"
+  {"ACarapace" "Alien Organisms"
+   "AOrgans" "Alien Organisms"
    "FlowerPetals" "Flower Petals"
    "PowerSlugs" "Power Slugs"})
 
@@ -55,8 +56,8 @@
 
 
 (defmethod schematic->menu-path :alternate
-   [{:keys [tier]}]
-   [:alternates tier])
+   []
+   [:alternates :_])
 
 
 (defn- -menu-data
@@ -76,9 +77,20 @@
 
 (defmethod menu-path->title :milestones [[_ tier]] (str "Tier " tier))
 (defmethod menu-path->title :research [[_ category]] category)
-(defmethod menu-path->title :alternates [[_ tier]] (if (zero? tier)
-                                                     "General"
-                                                     (str "Tier " tier)))
+(defmethod menu-path->title :alternates [_] "Alternates")
+
+
+(defmulti schematic->title (comp keyword :kind))
+
+(defmethod schematic->title :default
+  [{:keys [display]}]
+  display)
+
+(defmethod schematic->title :alternate
+  [{:keys [display]}]
+  (if-some [[_ title] (re-matches #"Alternate:(?:\s+)(.*)" display)]
+    title
+    display))
 
 
 (defn- unlock-ratio
@@ -95,16 +107,25 @@
 
 (rf/reg-event-db
   ::init-ui
-  (fn [db _]
-    (cond-> db
-      (nil? (-> db ::ui :menu-path))
-      (assoc-in [::ui :menu-path] [:milestones 1]))))
+  [(rf/path ::ui)]
+  (fn [ui _]
+    (-> ui
+        (update :menu-path (fnil identity [:milestones 1]))
+        (assoc :search-term ""))))
 
 
 (rf/reg-event-db
   ::set-menu-path
-  (fn [db [_ path]]
-    (assoc-in db [::ui :menu-path] path)))
+  [(rf/path ::ui)]
+  (fn [ui [_ path]]
+    (assoc ui :menu-path path)))
+
+
+(rf/reg-event-db
+  ::set-search-term
+  [(rf/path ::ui)]
+  (fn [ui [_ term]]
+    (assoc ui :search-term (str/lower-case (or term "")))))
 
 
 (rp/reg-event-ds
@@ -140,10 +161,26 @@
 
 
 (rf/reg-sub
+  ::search-term
+  :<- [::ui]
+  (fn [ui _]
+    (get ui :search-term)))
+
+
+(defn- schematic-id-matches?
+  [term schematic-id]
+  (some #(str/includes? % term)
+        (-> schematic-id game/id->schematic :search-terms)))
+
+
+(rf/reg-sub
   ::visible-schematic-ids
   :<- [::menu-path]
-  (fn [path _]
-    (sort (get-in @menu-data path))))
+  :<- [::search-term]
+  (fn [[path term] _]
+    (->> (get-in @menu-data path)
+         (filter (partial schematic-id-matches? term))
+         (sort))))
 
 
 (rp/reg-query-sub
@@ -167,16 +204,14 @@
 
 (defn- menu-link
   [path]
-  (r/with-let [active-path-sub (rf/subscribe [::menu-path])
-               checked-ids-sub (rf/subscribe [::checked-schematic-ids])]
-    (let [active-path @active-path-sub
-          checked-ids @checked-ids-sub]
-      [:a {:class [(when (= path active-path) "is-active")]
-           :on-click (ui/link-dispatch [::set-menu-path path])}
-       (menu-path->title path)
-       " "
-       [:span.has-text-grey
-        "(" (unlock-ratio path checked-ids) ")"]])))
+  (let [active-path @(rf/subscribe [::menu-path])
+        checked-ids @(rf/subscribe [::checked-schematic-ids])]
+    [:a {:class [(when (= path active-path) "is-active")]
+         :on-click (ui/link-dispatch [::set-menu-path path])}
+     (menu-path->title path)
+     " "
+     [:span.unlock-ratio
+      "(" (unlock-ratio path checked-ids) ")"]]))
 
 
 (defn- sub-menu
@@ -189,7 +224,7 @@
 
 (defn- main-menu
   []
-  [:aside.menu
+  [:aside.menu.schematics-menu
    [:p.menu-label "Milestones"]
    (sub-menu :milestones)
    [:p.menu-label "Research"]
@@ -200,23 +235,38 @@
 
 (defn- schematic-form
   [schematic-id]
-  (r/with-let [checked-ids-sub (rf/subscribe [::checked-schematic-ids])]
-    (let [schematic (game/id->schematic schematic-id)
-          checked-ids @checked-ids-sub]
-      [:div.my-6
-       [:label.label.is-size-5.has-text-weight-normal
-        [:input {:type "checkbox"
-                 :checked (contains? checked-ids schematic-id)
-                 :on-change #(rf/dispatch [::set-schematic-unlocked schematic-id (-> % .-target .-checked)])}]
-        [:span.ml-2 (:display schematic)]]
-       [:div.columns.is-multiline
-        (forall [recipe-id (:recipe-ids schematic)]
-          (let [recipe (game/id->recipe recipe-id)]
-            ^{:key recipe-id}
-            [:div.column.is-12.is-6-desktop.is-4-widescreen
-             [:div.is-flex.is-flex-direction-column
-              [:p>b (:display recipe)]
-              [recipes/recipe-io recipe-id]]]))]])))
+  (let [schematic (game/id->schematic schematic-id)
+        checked-ids @(rf/subscribe [::checked-schematic-ids])]
+    [:div.my-4
+     [:label.label.is-size-5.has-text-weight-normal
+      [:input {:type "checkbox"
+               :checked (contains? checked-ids schematic-id)
+               :on-change #(rf/dispatch [::set-schematic-unlocked schematic-id (-> % .-target .-checked)])}]
+      [:span.ml-2 (schematic->title schematic)]]
+     [:div
+      (forall [recipe-id (:recipe-ids schematic)]
+        (let [recipe (game/id->recipe recipe-id)]
+          ^{:key recipe-id}
+          [:div.is-flex.is-flex-direction-column.mt-3
+           [:p>b (:display recipe)]
+           [recipes/recipe-io recipe-id]]))]]))
+
+
+(defn- schematic-title
+  []
+  (let [menu-path @(rf/subscribe [::menu-path])]
+    [:div.is-flex
+     [:h1.title.mb-0 (menu-path->title menu-path)]
+     [:div.dropdown.is-hoverable
+      [:div.dropdown-trigger
+       [:button.button.is-white
+        [:span.icon [:i.bi-gear]]]]
+      [:div.dropdown-menu
+       [:div.dropdown-content
+        [:a.dropdown-item {:on-click (ui/link-dispatch [::set-schematic-group-unlocked menu-path false])}
+         "Lock all"]
+        [:a.dropdown-item {:on-click (ui/link-dispatch [::set-schematic-group-unlocked menu-path true])}
+         "Unlock all"]]]]]))
 
 
 (defn- schematic-forms
@@ -225,22 +275,17 @@
         schematic-ids @(rf/subscribe [::visible-schematic-ids])]
     (when menu-path
       [:div
-       [:div.is-flex
-        [:h1.title.mb-0 (menu-path->title menu-path)]
-        [:div.dropdown.is-hoverable
-         [:div.dropdown-trigger
-          [:button.button.is-white
-           [:span.icon [:i.bi-gear]]]]
-         [:div.dropdown-menu
-          [:div.dropdown-content
-           [:a.dropdown-item {:on-click (ui/link-dispatch [::set-schematic-group-unlocked menu-path false])}
-            "Lock all"]
-           [:a.dropdown-item {:on-click (ui/link-dispatch [::set-schematic-group-unlocked menu-path true])}
-            "Unlock all"]]]]]
-
-       (forall [schematic-id schematic-ids]
-         ^{:key schematic-id}
-         [schematic-form schematic-id])])))
+       [:div.level
+        [:div.level-left
+         [schematic-title]]
+        [:div.level-right
+         [forms/search-field {:placeholder "Search schematics"
+                              :on-update [::set-search-term]}]]]
+       [:div.columns.is-multiline
+        (forall [schematic-id schematic-ids]
+          ^{:key schematic-id}
+          [:div.column.is-12.is-6-desktop.is-4-widescreen
+           [schematic-form schematic-id]])]])))
 
 
 (defn root

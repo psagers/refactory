@@ -16,6 +16,12 @@
                                              #js {:maximumFractionDigits 1
                                                   :useGrouping false}))
 
+
+(defn format-amount
+  [amount]
+  (.format amount-formatter amount))
+
+
 (def ^:private amount-scales
   [[0 ""]
    [1e3 "k"]
@@ -35,7 +41,7 @@
                          (nil? bracket) (peek amount-scales)
                          (zero? scale) (assoc bracket 0 1)
                          :else bracket)]
-    (str (.format amount-formatter (/ amount scale)) suffix)))
+    (str (format-amount (/ amount scale)) suffix)))
 
 
 (comment
@@ -198,7 +204,7 @@
         (item-io item-id amount)
         [:span.ml-3
          amount " " (:display item) [:br]
-         (per-minute amount duration) "/min"]]))])
+         (format-amount (per-minute amount duration)) "/min"]]))])
 
 
 (defn recipe-details
@@ -243,7 +249,9 @@
       [:p.modal-card-title "Add a recipe"]
       [:button.delete {:on-click #(rf/dispatch [::finish-chooser nil])}]]
      [:section.modal-card-body
-      [forms/search-field {:on-update [::set-search-term]}]
+      [forms/search-field {:placeholder "Search by name or output"
+                           :auto-focus? true
+                           :on-update [::set-search-term]}]
       [:hr.hr]
       [:div.is-flex.is-flex-direction-column
        (forall [recipe-id recipe-ids]

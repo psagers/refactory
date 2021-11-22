@@ -1,0 +1,12 @@
+.schematics-menu {
+  .menu-list > li > a {
+    .unlock-ratio {
+      font-size: smaller;
+      color: $grey;
+    }
+
+    &.is-active .unlock-ratio {
+      color: findColorInvert($menu-item-active-background-color);
+    }
+  }
+}
