@@ -39,6 +39,8 @@
 
   At submit time, this will dispatch the given event with decoded field values
   appended."
-  [event]
-  (fn [{:keys [values]}]
-    (rf/dispatch (conj event (decode-values values {:default? true})))))
+  ([event]
+   (on-submit event {}))
+  ([event decode-opts]
+   (fn [{:keys [values]}]
+     (rf/dispatch (conj event (decode-values values decode-opts))))))

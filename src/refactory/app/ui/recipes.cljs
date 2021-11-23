@@ -186,7 +186,7 @@
 
      [recipe-details recipe-id]
 
-     [:div.is-flex.is-justify-content-end
+     [:div.is-flex.is-justify-content-flex-end
       [:button.button.is-success {:on-click #(rf/dispatch [::finish-chooser recipe-id])}
         [:span.icon [:i.bi-plus-circle]]
         [:span "Add"]]]]))

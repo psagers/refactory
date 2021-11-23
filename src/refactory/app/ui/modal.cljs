@@ -51,7 +51,7 @@
    [:header.modal-card-head {:class []}]
    [:section.modal-card-body
     [:p text]]
-   [:footer.modal-card-foot.is-justify-content-end
+   [:footer.modal-card-foot.is-justify-content-flex-end
     [:button.button {:on-click #(rf/dispatch [::hide modal-id])}
      "Cancel"]
     [:button.button {:class [(if danger? "is-danger" "is-success")]

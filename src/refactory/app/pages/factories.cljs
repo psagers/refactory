@@ -118,33 +118,22 @@
 (rf/reg-event-fx
   ::begin-rename-factory
   [(rp/inject-cofx :ds)]
-  (fn [{:keys [db ds]} [_ factory-id]]
-    (let [current (:factory/title (ds/entity ds factory-id))]
-      {:db (assoc-in db [::ui :factory-name-input] (or current ""))
-       :fx [[:dispatch [::modal/show ::rename-factory {:factory-id factory-id
-                                                       ::modal/close? false}]]]})))
-
-
-(rf/reg-event-db
-  ::type-factory-name
-  (fn [db [_ value]]
-    (assoc-in db [::ui :factory-name-input] value)))
+  (fn [_ [_ factory-id]]
+    {:fx [[:dispatch [::modal/show ::rename-factory {:factory-id factory-id
+                                                     ::modal/close? false}]]]}))
 
 
 (rf/reg-event-fx
   ::cancel-rename-factory
-  (fn [{:keys [db]} _]
-    {:db (update db ::ui dissoc :factory-name-input)
-     :fx [[:dispatch [::modal/hide ::rename-factory]]]}))
+  (fn [_ _]
+    {:fx [[:dispatch [::modal/hide ::rename-factory]]]}))
 
 
 (rf/reg-event-fx
   ::finish-rename-factory
-  (fn [{:keys [db]} [_ factory-id]]
-    (let [value (get-in db [::ui :factory-name-input])]
-      {:db (update db ::ui dissoc :factory-name-input)
-       :fx [[:transact [[:db/add factory-id :factory/title value]]]
-            [:dispatch [::modal/hide ::rename-factory]]]})))
+  (fn [_ [_ factory-id {:factory/keys [title]}]]
+    {:fx [[:transact [(when title [:db/add factory-id :factory/title title])]]
+          [:dispatch [::modal/hide ::rename-factory]]]}))
 
 
 ;; To duplicate a factory:
@@ -403,6 +392,13 @@
 (rp/reg-pull-sub
   ::factory
   '[:db/id :factory/mode :factory/title])
+
+
+(rp/reg-query-sub
+  ::factory-title
+  '[:find ?title .
+    :in $ ?factory-id
+    :where [?factory-id :factory/title ?title]])
 
 
 (rp/reg-query-sub
@@ -798,28 +794,41 @@
        [:th {:colSpan 3}]]]]))
 
 
+(defn- rename-factory-form
+  [{:keys [form-id normalize-name values handle-change handle-submit]}]
+  [:form {:id form-id
+          :on-submit handle-submit}
+   ;; This goes first to catch the enter key.
+   [:input.button.is-hidden {:type "submit"}]
+   [:div.modal-card
+    [:header.modal-card-head
+     [:p.modal-card-title "Rename factory"]
+     [:button.delete {:on-click #(rf/dispatch [::cancel-rename-factory])}]]
+    [:section.modal-card-body
+     [:div.field
+      [:div.control
+       [:input.input {:type "text"
+                      :name (normalize-name :factory/title)
+                      :value (values :factory/title)
+                      :min-length 1
+                      :max-length 30
+                      :autoFocus true
+                      :on-change handle-change}]]]]
+    [:footer.modal-card-foot.is-justify-content-flex-end
+     [:button.button {:on-click #(rf/dispatch [::cancel-rename-factory])}
+      "Cancel"]
+     [:input.button.is-success {:type "submit", :value "Save"}]]]])
+
+
 (defmethod modal/content ::rename-factory
   [{:keys [factory-id]}]
-  (r/with-let [input-value-sub (rf/subscribe [::factory-name-input])]
-    (let [input-value @input-value-sub]
-      [:div.modal-card
-       [:header.modal-card-head
-        [:p.modal-card-title "Rename factory"]
-        [:button.delete {:on-click #(rf/dispatch [::cancel-rename-factory])}]]
-       [:section.modal-card-body
-        [:div.field
-         [:div.control
-          [:input.input {:type "text"
-                         :value input-value
-                         :min-length 1
-                         :max-length 30
-                         :autoFocus true
-                         :on-change #(rf/dispatch-sync [::type-factory-name (-> % .-target .-value)])}]]]]
-       [:footer.modal-card-foot.is-justify-content-end
-        [:button.button {:on-click #(rf/dispatch [::cancel-rename-factory])}
-         "Cancel"]
-        [:button.button.is-success {:on-click #(rf/dispatch [::finish-rename-factory factory-id])}
-         "Save"]]])))
+  (let [title @(rf/subscribe [::factory-title factory-id])]
+    [fork/form {:keywordize-keys true
+                :prevent-default? true
+                :clean-on-unmount? true
+                :initial-values {:factory/title title}
+                :on-submit (forms/on-submit [::finish-rename-factory factory-id])}
+     rename-factory-form]))
 
 
 (defn- factory-actions
@@ -906,7 +915,7 @@
         " Fixed"]
        [:p.help.ml-4 "Model a production pipeline that will generate a fixed number of outputs. Useful for calculating the inputs needed for one-off production."]]]]
 
-    [:footer.modal-card-foot.is-justify-content-end
+    [:footer.modal-card-foot.is-justify-content-flex-end
      [:button.button {:on-click (ui/link-dispatch [::modal/hide ::new-factory])}
       "Cancel"]
      [:input.button.is-success {:type "submit"
@@ -915,12 +924,11 @@
 
 (defmethod modal/content ::new-factory
   [_opts]
-  [fork/form {:path ::new-factory
-              :keywordize-keys true
+  [fork/form {:keywordize-keys true
               :prevent-default? true
               :clean-on-unmount? true
               :initial-values {:factory/mode "continuous"}
-              :on-submit (forms/on-submit [::new-factory])}
+              :on-submit (forms/on-submit [::new-factory] {:default? true})}
    new-factory-form])
 
 
