@@ -207,25 +207,46 @@
 (def STORAGE-KEY "autosave")
 
 
-(defn- save-to-storage!
+(defn export-ds
+  "Serializes a DataScript connection to a string for export."
+  ([]
+   (export-ds @re-posh.db/store))
+  ([conn]
+   (->> @conn
+        (ds/serializable)
+        (js/JSON.stringify))))
+
+
+(defn save-to-storage!
   []
-  (->> (ds)
-       (ds/serializable)
-       (js/JSON.stringify)
+  (->> (export-ds @re-posh.db/store)
        (. js/window.localStorage setItem STORAGE-KEY)))
 
 
-(defn- create-conn-from-storage
+(defn import-ds
+  "Loads a previously exported DataScript connection.
+
+  This loads the exported datoms into a connection with the current schema."
+  [data]
+  (-> data
+      (js/JSON.parse)
+      (ds/from-serializable)
+      (ds/datoms :eavt)
+      (ds/conn-from-datoms ds-schema)))
+
+
+(defn create-conn-from-storage
   []
   (when-some [data (. js/window.localStorage getItem STORAGE-KEY)]
     (try
-      (-> data
-          (js/JSON.parse)
-          (ds/from-serializable)
-          (ds/datoms :eavt)
-          (ds/conn-from-datoms ds-schema))
+      (import-ds data)
       (catch js/Error e
         (js/console.warn "Failed to load saved database." e)))))
+
+
+(defn reset-conn!
+  [db]
+  (ds/reset-conn! @re-posh.db/store db))
 
 
 (def save-soon (debounce #(rf/dispatch [::save]) 2500))

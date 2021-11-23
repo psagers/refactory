@@ -1,4 +1,8 @@
 @charset "utf-8";
+
+$text: #4a4a4a;
+$navbar-dropdown-arrow: $text;
+
 @import "bulma";
 @import "../../node_modules/bootstrap-icons/font/bootstrap-icons";
 

@@ -1,14 +1,17 @@
 (ns refactory.app
-  (:require [day8.re-frame.http-fx]
+  (:require ["file-saver" :as file-saver]
+            [day8.re-frame.http-fx]
             [re-frame.core :as rf]
             [reagent.core :as r]
             [reagent.dom :as rdom]
             [refactory.app.db :as db]
             [refactory.app.game :as game]
             [refactory.app.pages :as pages]
-            [refactory.app.pages.schematics :as schematics]
             [refactory.app.pages.factories :as factories]
+            [refactory.app.pages.schematics :as schematics]
             [refactory.app.pages.survey :as survey]
+            [refactory.app.persist :as persist]
+            [refactory.app.ui :as ui]
             [refactory.app.ui.modal :as modal]))
 
 
@@ -82,6 +85,15 @@
        [:a.navbar-item.is-tab {:class [(when (= @page :schematics) "is-active")]
                                :on-click #(rf/dispatch [::switch-to :schematics])}
         "Schematics"]
+       [:div.navbar-item.has-dropdown.is-hoverable
+        [:a.navbar-link "Data"]
+        [:div.navbar-dropdown.is-right
+         [:a.navbar-item {:on-click (ui/link-dispatch [::persist/begin-export])}
+          ;; [:span.icon [:i.bi-download]]
+          [:span "Export data"]]
+         [:a.navbar-item {:on-click (ui/link-dispatch [::persist/begin-import])}
+          ;; [:span.icon [:i.bi-upload]]
+          [:span "Import data"]]]]
        [:a.navbar-item.is-tab {:class [(when (= @page :help) "is-active")]
                                :on-click #(rf/dispatch [::switch-to :help])}
         [:i.bi-question-circle]]]]]))
