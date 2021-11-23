@@ -4,8 +4,7 @@
             [expound.alpha :as expound]
             [re-frame.core :as rf]
             [refactory.app :as app]
-            [refactory.app.db :as db]
-            [refactory.app.pages.config :as config]))
+            [refactory.app.db :as db]))
 
 
 (s/def ::app/page keyword?)

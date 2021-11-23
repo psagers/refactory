@@ -1,4 +1,4 @@
-(ns refactory.app.pages.config
+(ns refactory.app.pages.schematics
   (:require [clojure.string :as str]
             [datascript.core :as ds]
             [re-frame.core :as rf]
@@ -18,7 +18,7 @@
     [[:db/add -1 :page/id :config]]))
 
 
-(defmethod pages/page-config :config
+(defmethod pages/page-config :schematics
   [_]
   {:enter [::init-ui]})
 

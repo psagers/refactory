@@ -6,7 +6,7 @@
             [refactory.app.db :as db]
             [refactory.app.game :as game]
             [refactory.app.pages :as pages]
-            [refactory.app.pages.config :as config]
+            [refactory.app.pages.schematics :as schematics]
             [refactory.app.pages.factories :as factories]
             [refactory.app.pages.survey :as survey]
             [refactory.app.ui.modal :as modal]))
@@ -79,9 +79,9 @@
         "Survey"]]
 
       [:div.navbar-end
-       [:a.navbar-item.is-tab {:class [(when (= @page :config) "is-active")]
-                               :on-click #(rf/dispatch [::switch-to :config])}
-        "Recipes"]
+       [:a.navbar-item.is-tab {:class [(when (= @page :schematics) "is-active")]
+                               :on-click #(rf/dispatch [::switch-to :schematics])}
+        "Schematics"]
        [:a.navbar-item.is-tab {:class [(when (= @page :help) "is-active")]
                                :on-click #(rf/dispatch [::switch-to :help])}
         [:i.bi-question-circle]]]]]))
@@ -108,7 +108,7 @@
         :blank nil
         :factories [factories/root]
         :survey [survey/root]
-        :config [config/root]
+        :schematics [schematics/root]
         [nyi])]
 
      (when @modal-opts
