@@ -4,8 +4,83 @@
             [refactory.app.game :as game]
             [refactory.app.ui.forms :as forms]
             [refactory.app.ui.modal :as modal]
-            [refactory.app.ui.recipes :as recipes]
             [refactory.app.util :refer [forall]]))
+
+;;
+;; General UI
+;;
+
+(def amount-formatter (js/Intl.NumberFormat. js/undefined
+                                             #js {:maximumFractionDigits 1
+                                                  :useGrouping false}))
+
+
+(defn format-amount
+  [amount]
+  (.format amount-formatter amount))
+
+
+(def ^:private amount-scales
+  [[0 ""]
+   [1e3 "k"]
+   [1e6 "m"]
+   [1e9 "b"]
+   [1e12 "t"]
+   [1e15 "q"]])
+
+
+(defn amount->badge
+  "Renders an amount to a string suitable for an icon badge."
+  [amount]
+  (let [[scale _ :as bracket] (last (take-while (fn [[scale _]]
+                                                  (<= scale (Math/abs amount)))
+                                                amount-scales))
+        [scale suffix] (cond
+                         (nil? bracket) (peek amount-scales)
+                         (zero? scale) (assoc bracket 0 1)
+                         :else bracket)]
+    (str (format-amount (/ amount scale)) suffix)))
+
+
+(comment
+  (map amount->badge [0 1 500 999 1000 -1500 1999 -20050 999999 1254000]))
+
+
+(defn- item->icon-path
+  [item]
+  (str "img/" (:icon item)))
+
+
+(defn item-icon
+  ([item-id]
+   (item-icon item-id {}))
+  ([item-id attrs]
+   (let [item (game/id->item item-id)]
+     [:div.icon attrs
+      [:img {:src (item->icon-path item)
+             :alt (:display item)
+             :title (:display item)
+             :loading "lazy"}]])))
+
+
+(defn item-io
+  "A component indicating an item along with an optional amount."
+  ([item-id]
+   (item-io item-id nil {}))
+  ([item-id amount]
+   (item-io item-id amount {}))
+  ([item-id amount {:keys [rate?]}]
+   (let [item (game/id->item item-id)]
+     [:div.item-io
+      [:div.item-io-content
+       [:img {:src (item->icon-path item)
+              :alt (:display item)
+              :title (:display item)
+              :loading "lazy"}]
+       (when amount
+         (if rate?
+           [:i.amount (amount->badge amount)]
+           [:span.amount (amount->badge amount)]))]])))
 
 
 ;;
@@ -96,4 +171,4 @@
        (forall [item-id item-ids]
          ^{:key item-id}
          [:button.button.is-large.m-1 {:on-click #(rf/dispatch [::finish-chooser item-id])}
-          [recipes/item-icon item-id {:class "is-large"}]])]]]))
+          [item-icon item-id {:class "is-large"}]])]]]))

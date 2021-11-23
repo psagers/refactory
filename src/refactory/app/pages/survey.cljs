@@ -133,7 +133,7 @@
           [:tr
            [:td
             [:div.is-flex.is-align-items-center
-             [recipes/item-icon item-id]
+             [items/item-icon item-id]
              [:span.ml-2 (:display (game/id->item item-id))]]]
            [:td
             [:button.delete {:on-click #(rf/dispatch [::remove-ingredient item-id])}]]])]
@@ -143,7 +143,7 @@
 (defn- results-table
   []
   (let [recipe-ids @(rf/subscribe [::buildable-recipe-ids])]
-    [:table.table
+    [:table.table.is-fullwidth
      [:thead
       [:tr
        [:th]]]
@@ -151,7 +151,8 @@
       (forall [recipe-id recipe-ids]
         ^{:key recipe-id}
         [:tr
-         [:td [recipes/recipe-io recipe-id]]])]
+         [:td [recipes/recipe-io recipe-id {:per-minute? true
+                                            :info? true}]]])]
      [:tfoot
       [:tr
        [:th]]]]))

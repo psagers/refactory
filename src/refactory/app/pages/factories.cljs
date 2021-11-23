@@ -11,6 +11,7 @@
             [refactory.app.pages :as pages]
             [refactory.app.ui :as ui]
             [refactory.app.ui.forms :as forms]
+            [refactory.app.ui.items :as items]
             [refactory.app.ui.modal :as modal]
             [refactory.app.ui.recipes :as recipes]
             [refactory.app.util :refer [compare-by forall per-minute]]))
@@ -43,7 +44,7 @@
 
 (defn format-signed [v] (. signed-formatter format v))
 (defn format-total [v] (. total-formatter format v))
-;; (defn format-total [amount] (recipes/amount->badge amount))
+;; (defn format-total [amount] (items/amount->badge amount))
 
 
 ;;
@@ -756,11 +757,12 @@
         [job-instance-cells job-id]
         [job-count-cells job-id])
 
-      [:td (recipes/recipe-io recipe-id (cond
-                                          disabled? 0
-                                          continuous? (per-minute (/ production-pct 100)
-                                                                  (:duration recipe))
-                                          :else (:job/count job)))]
+      [:td (recipes/recipe-io recipe-id (merge {:info? true}
+                                               (cond
+                                                 disabled? {:multiple 0}
+                                                 continuous? {:multiple (/ production-pct 100)
+                                                              :per-minute? true}
+                                                 :else {:multiple (:job/count job)})))]
       [:td.has-text-right [job-actions job-id]]]
 
      (when (= expanded-id job-id)
@@ -788,7 +790,8 @@
      [:tfoot.has-text-left
       [:tr
        [:th.has-text-left
-        [:button.button.is-primary {:on-click #(rf/dispatch [::recipes/show-chooser {:on-success [::add-job factory-id]}])}
+        [:button.button.is-primary {:on-click #(rf/dispatch [::recipes/show-chooser {:per-minute? continuous?
+                                                                                     :on-success [::add-job factory-id]}])}
          [:span.icon [:i.bi-plus-circle]]
          [:span "Add a job"]]]
        [:th (when continuous? (or instance-count 0))]
@@ -960,7 +963,7 @@
         output-totals @(rf/subscribe [::factory-output-totals factory-id])]
     [:div.ml-auto.has-text-right {:style {:position "sticky"
                                           :top "1rem"}}
-      [:table.table.is-fullwidth
+      [:table.table.is-fullwidth.is-size-7.is-size-6-widescreen
        [:thead
         [:tr
          [:th (when continuous? "/min:")]
@@ -972,7 +975,7 @@
         (forall [[item-id {:keys [in]}] input-totals]
           ^{:key item-id}
           [:tr
-           [:td (recipes/item-icon item-id)]
+           [:td (items/item-icon item-id)]
            [:td (format-total in)]
            [:td]
            [:td (format-total (- in))]
@@ -981,7 +984,7 @@
           (let [net (- out in)]
             ^{:key item-id}
             [:tr
-             [:td (recipes/item-icon item-id)]
+             [:td (items/item-icon item-id)]
              [:td (format-total in)]
              [:td (format-total out)]
              [:td {:class [(when (neg? net) "has-text-danger")]} (format-total net)]
@@ -989,7 +992,7 @@
         (forall [[item-id {:keys [out]}] output-totals]
           ^{:key item-id}
           [:tr
-           [:td (recipes/item-icon item-id)]
+           [:td (items/item-icon item-id)]
            [:td]
            [:td (format-total out)]
            [:td (format-total out)]

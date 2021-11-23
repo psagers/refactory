@@ -249,7 +249,7 @@
           ^{:key recipe-id}
           [:div.is-flex.is-flex-direction-column.mt-3
            [:p>b (:display recipe)]
-           [recipes/recipe-io recipe-id]]))]]))
+           [recipes/recipe-io recipe-id {:info? true}]]))]]))
 
 
 (defn- schematic-title

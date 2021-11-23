@@ -3,96 +3,39 @@
   (:require [clojure.string :as str]
             [re-frame.core :as rf]
             [refactory.app.game :as game]
-            [refactory.app.ui.modal :as modal]
             [refactory.app.ui.forms :as forms]
+            [refactory.app.ui.items :as items]
+            [refactory.app.ui.modal :as modal]
             [refactory.app.util :refer [forall per-minute]]))
 
 
-;;
-;; Generic recipe UI
-;;
-
-(def amount-formatter (js/Intl.NumberFormat. js/undefined
-                                             #js {:maximumFractionDigits 1
-                                                  :useGrouping false}))
-
-
-(defn format-amount
-  [amount]
-  (.format amount-formatter amount))
-
-
-(def ^:private amount-scales
-  [[0 ""]
-   [1e3 "k"]
-   [1e6 "m"]
-   [1e9 "b"]
-   [1e12 "t"]
-   [1e15 "q"]])
-
-
-(defn amount->badge
-  "Renders an amount to a string suitable for an icon badge."
-  [amount]
-  (let [[scale _ :as bracket] (last (take-while (fn [[scale _]]
-                                                  (<= scale (Math/abs amount)))
-                                                amount-scales))
-        [scale suffix] (cond
-                         (nil? bracket) (peek amount-scales)
-                         (zero? scale) (assoc bracket 0 1)
-                         :else bracket)]
-    (str (format-amount (/ amount scale)) suffix)))
-
-
-(comment
-  (map amount->badge [0 1 500 999 1000 -1500 1999 -20050 999999 1254000]))
-
-
-(defn- item->icon-path
-  [item]
-  (str "img/" (:icon item)))
-
-
-(defn item-icon
-  ([item-id]
-   (item-icon item-id {}))
-  ([item-id attrs]
-   (let [item (game/id->item item-id)]
-     [:div.icon attrs
-      [:img {:src (item->icon-path item)
-             :alt (:display item)
-             :title (:display item)
-             :loading "lazy"}]])))
-
-
-(defn item-io
-  "A component indicating an item along with an optional amount."
-  ([item-id]
-   (item-io item-id nil))
-  ([item-id amount]
-   (let [item (game/id->item item-id)]
-     [:div.item-io
-      [:div.item-io-content
-       [:img {:src (item->icon-path item)
-              :alt (:display item)
-              :title (:display item)
-              :loading "lazy"}]
-       (when amount
-         [:span.amount (amount->badge amount)])]])))
-
 
 (defn recipe-io
-  "A visual representation of a recipe."
+  "A visual representation of a recipe, with badged items showing inputs and
+  outputs. Options:
+
+    multiple: For the item badges, calculate multiple builders or iterations.
+      Defaults to 1.
+    per-minute?: If true, calculate per-minute figures for the badges.
+    info? If true, add an icon to open a modal with more details.
+    "
   ([recipe-id]
-   (recipe-io recipe-id 1))
-  ([recipe-id factor]
-   (let [recipe (game/id->recipe recipe-id)]
+   (recipe-io recipe-id {}))
+  ([recipe-id {:keys [multiple per-minute? info?]
+               :or {multiple 1, per-minute? false, info? false}}]
+   (let [recipe (game/id->recipe recipe-id)
+         factor (if per-minute?
+                  (per-minute multiple (:duration recipe))
+                  multiple)]
      [:div.recipe-io
       (forall [{:keys [item-id amount]} (:input recipe)]
-        ^{:key item-id} [item-io item-id (* amount factor)])
+        ^{:key item-id} [items/item-io item-id (* amount factor) {:rate? per-minute?}])
       [:span.icon.has-text-black [:i.bi-caret-right-fill]]
       (forall [{:keys [item-id amount]} (:output recipe)]
-        ^{:key item-id} [item-io item-id (* amount factor)])])))
+        ^{:key item-id} [items/item-io item-id (* amount factor) {:rate? per-minute?}])
+      (when info?
+        [:button.button.is-white.is-small {:on-click #(rf/dispatch [::modal/show ::details {:recipe-id recipe-id}])}
+         [:span.icon [:i.bi-info-circle]]])])))
 
 
 ;;
@@ -106,9 +49,11 @@
 ;; on-cancel if the modal is dismissed.
 (rf/reg-event-fx
   ::show-chooser
-  (fn [{:keys [db]} [_ {:keys [search-term on-success on-cancel]}]]
-    (let [search-term (str/lower-case (or search-term ""))]
+  (fn [{:keys [db]} [_ {:keys [search-term per-minute? on-success on-cancel]
+                        :or {search-term "", per-minute? false}}]]
+    (let [search-term (str/lower-case search-term)]
       {:db (assoc db ::chooser {:search-term search-term
+                                :per-minute? per-minute?
                                 :on-success on-success
                                 :on-cancel on-cancel})
        :fx [[:dispatch [::modal/show ::chooser {::modal/close? false}]]]})))
@@ -164,6 +109,13 @@
 
 
 (rf/reg-sub
+  ::chooser-per-minute?
+  :<- [::chooser-state]
+  (fn [state _]
+    (:per-minute? state)))
+
+
+(rf/reg-sub
   ::chooser-recipe-ids
   :<- [::game/unlocked-recipe-ids]
   :<- [::chooser-search-term]
@@ -185,12 +137,13 @@
 (defn- chooser-recipe-brief
   "The one-line representation of a recipe in the chooser list."
   [recipe-id]
-  [:div.is-flex.is-align-content-center.mb-2
-    [:a.is-flex-grow-1 {:on-click #(rf/dispatch [::chooser-expand-recipe recipe-id])}
-     (recipe-io recipe-id)]
-    [:a.is-flex-grow-0.ml-5.has-text-black
-     [:span.icon.is-large {:on-click #(rf/dispatch [::finish-chooser recipe-id])}
-      [:i.bi-plus-circle]]]])
+  (let [per-minute? @(rf/subscribe [::chooser-per-minute?])]
+    [:div.is-flex.is-align-content-center.mb-2
+      [:a.is-flex-grow-1 {:on-click #(rf/dispatch [::chooser-expand-recipe recipe-id])}
+       (recipe-io recipe-id {:per-minute? per-minute?})]
+      [:a.is-flex-grow-0.ml-5.has-text-black
+       [:span.icon.is-large {:on-click #(rf/dispatch [::finish-chooser recipe-id])}
+        [:i.bi-plus-circle]]]]))
 
 
 (defn- io-details
@@ -201,26 +154,29 @@
      (let [item (game/id->item item-id)]
        ^{:key item-id}
        [:div.mr-6.mb-4.is-inline-flex.is-align-content-center
-        (item-io item-id amount)
+        (items/item-io item-id amount)
         [:span.ml-3
          amount " " (:display item) [:br]
-         (format-amount (per-minute amount duration)) "/min"]]))])
+         (items/format-amount (per-minute amount duration)) "/min"]]))])
 
 
 (defn recipe-details
   [recipe-id]
-  (let [{:keys [input output duration]} (game/id->recipe recipe-id)]
+  (let [{:keys [input output duration builder-id]} (game/id->recipe recipe-id)]
     [:<>
-     [:p.is-size-5.block "Inputs"]
+     [:p.is-size-5.mb-2 "Inputs"]
      (io-details input duration)
 
-     [:p.is-size-5.mt-5.block "Outputs"]
-     (io-details output duration)]))
+     [:p.is-size-5.mb-2 "Outputs"]
+     (io-details output duration)
+
+     [:p.is-size-5 "Builder"]
+     [:span (:display (game/id->builder builder-id)) ", " duration "s"]]))
 
 
 (defn chooser-recipe-expanded
   [recipe-id]
-  (let [{:keys [display builder-id duration alternate]} (game/id->recipe recipe-id)]
+  (let [{:keys [display alternate]} (game/id->recipe recipe-id)]
     [:div.box
      [:div.level.is-mobile
       [:div.level-left
@@ -230,20 +186,17 @@
 
      [recipe-details recipe-id]
 
-     [:p.is-size-5.block "Builder"]
-     [:div.level
-      [:div.level-left
-       (:display (game/id->builder builder-id)) ", " duration "s"]
-      [:div.level-right
-       [:button.button.is-success {:on-click #(rf/dispatch [::finish-chooser recipe-id])}
-         [:span.icon [:i.bi-plus-circle]]
-         [:span "Add"]]]]]))
+     [:div.is-flex.is-justify-content-end
+      [:button.button.is-success {:on-click #(rf/dispatch [::finish-chooser recipe-id])}
+        [:span.icon [:i.bi-plus-circle]]
+        [:span "Add"]]]]))
 
 
 (defmethod modal/content ::chooser
   []
   (let [recipe-ids @(rf/subscribe [::chooser-recipe-ids])
-        expanded-id @(rf/subscribe [::chooser-expanded-recipe])]
+        expanded-id @(rf/subscribe [::chooser-expanded-recipe])
+        per-minute? @(rf/subscribe [::chooser-per-minute?])]
     [:div.modal-card
      [:header.modal-card-head
       [:p.modal-card-title "Add a recipe"]
@@ -253,6 +206,12 @@
                            :auto-focus? true
                            :on-update [::set-search-term]}]
       [:hr.hr]
+      [:div.content
+       [:p.help
+        (when per-minute? "Showing units per minute. ")
+        "Click on a recipe for more details or add it with "
+        [:span.icon.is-small [:i.bi-plus-circle]]
+        "."]]
       [:div.is-flex.is-flex-direction-column
        (forall [recipe-id recipe-ids]
          (if (= recipe-id expanded-id)
