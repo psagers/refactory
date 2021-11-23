@@ -62,7 +62,9 @@
 
    :survey/exclusivity {:app/kind :keyword
                         :app/default :at-most}
-   :survey/item-ids {:db/cardinality :db.cardinality/many}})
+   :survey/item-ids {:db/cardinality :db.cardinality/many}
+   :survey/badge-mode {:app/kind :keyword
+                       :app/default :continuous}})
 
 
 (defn ds
@@ -153,6 +155,10 @@
   [value _]
   (when (game/id->item value)
     value))
+
+(defmethod decode-attr :survey/badge-mode
+  [value _]
+  (#{:continuous :fixed} value))
 
 
 (defn decode-value

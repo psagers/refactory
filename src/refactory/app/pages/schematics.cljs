@@ -292,6 +292,7 @@
   []
   [:div.columns
    [:div.column.is-narrow.mr-6
-    [main-menu]]
+    [:div.box
+     [main-menu]]]
    [:div.column
     [schematic-forms]]])

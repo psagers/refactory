@@ -81,19 +81,23 @@
 
 (defn item-id->deep-recipe-ids
   "Given an item-id, does a deep traversal of the recipe graph, finding every
-  recipe that incorporates this item."
+  recipe that incorporates this item.
+
+  Returns a map of recipe-id to the number of build hops required to reach it."
   [recipe-id-pool item-id]
   (loop [recipe-id-pool recipe-id-pool
          item-ids #{item-id}
-         recipe-ids #{}]
+         recipe-id->hop {}
+         hops 1]
     (let [new-recipe-ids (set/select #(some (comp item-ids :item-id)
                                             (-> % id->recipe :input))
                                      recipe-id-pool)]
       (if (empty? new-recipe-ids)
-        recipe-ids
+        recipe-id->hop
         (recur (set/difference recipe-id-pool new-recipe-ids)
                (set/union item-ids (recipe-ids->output-ids new-recipe-ids))
-               (set/union recipe-ids new-recipe-ids))))))
+               (into recipe-id->hop (for [recipe-id new-recipe-ids] [recipe-id hops]))
+               (inc hops))))))
 
 
 (defn -base-recipe-ids

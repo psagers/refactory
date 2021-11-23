@@ -1011,7 +1011,8 @@
        (when factory-id
          [:div.columns
           [:div.column.is-three-quarters
-           [factory-table-view factory-id]]
+           [:div.box
+            [factory-table-view factory-id]]]
            ;; [factory-jobs factory-id]]
           [:div.column.is-one-quarter
            [factory-totals factory-id]]])])))
