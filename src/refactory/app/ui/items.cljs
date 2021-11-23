@@ -171,4 +171,4 @@
        (forall [item-id item-ids]
          ^{:key item-id}
          [:button.button.is-large.m-1 {:on-click #(rf/dispatch [::finish-chooser item-id])}
-          [item-icon item-id {:class "is-large"}]])]]]))
+          (item-icon item-id {:class "is-large"})])]]]))

@@ -22,4 +22,5 @@
   com.rpl.specter/defrichnav clojure.core/defn
   meander.epsilon/defsyntax clojure.core/defmacro
   reagent.core/with-let clojure.core/let
-  refactory.app.util/forall clojure.core/for}}
+  refactory.app.util/forall clojure.core/for
+  refactory.app.util/for<> clojure.core/for}}

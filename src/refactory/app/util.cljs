@@ -1,5 +1,5 @@
 (ns refactory.app.util
-  (:require-macros refactory.app.util))
+  (:require-macros [refactory.app.util]))
 
 
 (def number-formatter (js/Intl.NumberFormat.))

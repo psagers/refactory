@@ -6,7 +6,7 @@
             [refactory.app.ui.forms :as forms]
             [refactory.app.ui.items :as items]
             [refactory.app.ui.modal :as modal]
-            [refactory.app.util :refer [forall per-minute]]))
+            [refactory.app.util :refer [forall for<> per-minute]]))
 
 
 
@@ -18,7 +18,9 @@
       Defaults to 1.
     per-minute?: If true, calculate per-minute figures for the badges.
     info? If true, add an icon to open a modal with more details.
-    "
+
+  This can be treated as a component rendering function, but is generally
+  better off embedded directly."
   ([recipe-id]
    (recipe-io recipe-id {}))
   ([recipe-id {:keys [multiple per-minute? info?]
@@ -28,11 +30,11 @@
                   (per-minute multiple (:duration recipe))
                   multiple)]
      [:div.recipe-io
-      (forall [{:keys [item-id amount]} (:input recipe)]
-        ^{:key item-id} [items/item-io item-id (* amount factor) {:rate? per-minute?}])
+      (for<> [{:keys [item-id amount]} (:input recipe)]
+        (items/item-io item-id (* amount factor) {:rate? per-minute?}))
       [:span.icon.has-text-black [:i.bi-caret-right-fill]]
-      (forall [{:keys [item-id amount]} (:output recipe)]
-        ^{:key item-id} [items/item-io item-id (* amount factor) {:rate? per-minute?}])
+      (for<> [{:keys [item-id amount]} (:output recipe)]
+        (items/item-io item-id (* amount factor) {:rate? per-minute?}))
       (when info?
         [:button.button.is-white.is-small {:on-click #(rf/dispatch [::modal/show ::details {:recipe-id recipe-id}])}
          [:span.icon [:i.bi-info-circle]]])])))
