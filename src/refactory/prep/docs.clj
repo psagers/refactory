@@ -104,7 +104,8 @@
 
 (defn normalize-recipe-display
   [display]
-  (str/replace display #"^Alternate: (.*)" "$1"))
+  (some-> display
+          (str/replace #"^Alternate: (.*)" "$1")))
 
 
 (defn- docs->recipes
