@@ -23,18 +23,13 @@
     {:fx [[:dispatch [::modal/hide ::export]]]}))
 
 
-(rf/reg-fx
-  ::export-data
-  (fn [_]
-    (-> (js/Blob. [(db/export-ds)] #js {:type "text/plain;charset=utf-8"})
-        (file-saver/saveAs "refactory-export.txt"))))
-
-
-(rf/reg-event-fx
-  ::export-data
-  (fn [_ _]
-    {:fx [[::export-data]
-          [:dispatch [::end-export]]]}))
+(defn export-data!
+  "Some browsers (iOS) are fussy about starting downloads from asynchronous
+  events. We need to break the re-frame rules here and initiate the download
+  directly from the event handler."
+  []
+  (-> (js/Blob. [(db/export-ds)] #js {:type "text/plain;charset=utf-8"})
+      (file-saver/saveAs "refactory-export.txt")))
 
 
 (defmethod modal/content ::export
@@ -49,7 +44,8 @@
    [:footer.modal-card-foot.is-justify-content-flex-end
     [:button.button {:on-click (ui/link-dispatch [::end-export])}
      "Cancel"]
-    [:button.button.is-success {:on-click (ui/link-dispatch [::export-data])}
+    [:button.button.is-success {:on-click #(do (export-data!)
+                                               (rf/dispatch [::end-export]))}
      "Export"]]])
 
 
@@ -74,8 +70,7 @@
 (rf/reg-event-db
   ::import-files-changed
   (fn [db [_ files]]
-    (if (and (= (.-length files) 1)
-             (< (-> files first .-size) (* 10 1024)))
+    (if (= (.-length files) 1)
       (assoc-in db [::import :files] files)
       (update db ::import dissoc :files))))
 
