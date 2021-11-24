@@ -347,9 +347,11 @@
 (defn- migrate-ds!
   "Runs all DataScript migrations."
   [conn]
-  (ds/transact! conn (->> (keys (methods ds-migration))
-                          (mapcat #(ds-migration % @conn))
-                          (remove nil?))))
+  (doseq [client-id (keys (methods ds-migration))]
+    (some->> (ds-migration client-id @conn)
+             (remove nil?)
+             (not-empty)
+             (ds/transact! conn))))
 
 
 (defn init

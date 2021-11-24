@@ -14,8 +14,8 @@
 
 (defmethod db/ds-migration ::_
   [_ ds]
-  (when-not (ds/entid ds [:page/id :config])
-    [[:db/add -1 :page/id :config]]))
+  [(when-not (ds/entid ds [:page/id :config])
+     [:db/add -1 :page/id :config])])
 
 
 (defmethod pages/page-config :schematics
