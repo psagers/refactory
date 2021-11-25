@@ -7,8 +7,9 @@
 
 
 (defn search-field
-  [{:keys [placeholder auto-focus? interval on-update] :or {interval 350}}]
-  (r/with-let [text (ratom/atom "")
+  [{:keys [initial placeholder auto-focus? interval on-update]
+    :or {initial "", interval 350}}]
+  (r/with-let [text (ratom/atom initial)
                update-now (fn [value] (rf/dispatch (conj on-update value)))
                update-soon (debounce update-now interval)]
     [:div.control.has-icons-right

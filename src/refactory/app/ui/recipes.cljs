@@ -17,14 +17,17 @@
     multiple: For the item badges, calculate multiple builders or iterations.
       Defaults to 1.
     per-minute?: If true, calculate per-minute figures for the badges.
-    info? If true, add an icon to open a modal with more details.
+    on-info: A re-frame event to dispatch when the user clicks the info button.
+      Defaults to showing the recipe details modal. Pass nil to disable.
 
   This can be treated as a component rendering function, but is generally
   better off embedded directly."
   ([recipe-id]
    (recipe-io recipe-id {}))
-  ([recipe-id {:keys [multiple per-minute? info?]
-               :or {multiple 1, per-minute? false, info? false}}]
+  ([recipe-id {:keys [multiple per-minute? on-info]
+               :or {multiple 1
+                    per-minute? false
+                    on-info [::show-details recipe-id]}}]
    (let [recipe (game/id->recipe recipe-id)
          factor (if per-minute?
                   (per-minute multiple (:duration recipe))
@@ -35,8 +38,8 @@
       [:span.icon.has-text-black [:i.bi-caret-right-fill]]
       (for<> [{:keys [item-id amount]} (:output recipe)]
         (items/item-io item-id (* amount factor) {:rate? per-minute?}))
-      (when info?
-        [:button.button.is-white.is-small {:on-click #(rf/dispatch [::modal/show ::details {:recipe-id recipe-id}])}
+      (when on-info
+        [:button.button.is-white.is-small {:on-click #(rf/dispatch on-info)}
          [:span.icon [:i.bi-info-circle]]])])))
 
 
@@ -51,14 +54,14 @@
 ;; on-cancel if the modal is dismissed.
 (rf/reg-event-fx
   ::show-chooser
-  (fn [{:keys [db]} [_ {:keys [search-term per-minute? on-success on-cancel]
-                        :or {search-term "", per-minute? false}}]]
-    (let [search-term (str/lower-case search-term)]
-      {:db (assoc db ::chooser {:search-term search-term
-                                :per-minute? per-minute?
-                                :on-success on-success
-                                :on-cancel on-cancel})
-       :fx [[:dispatch [::modal/show ::chooser {::modal/close? false}]]]})))
+  (fn [{:keys [db]} [_ {:keys [search-text per-minute? on-success on-cancel]
+                        :or {search-text "", per-minute? false}}]]
+    {:db (assoc db ::chooser {:initial-search search-text
+                              :per-minute? per-minute?
+                              :on-success on-success
+                              :on-cancel on-cancel})
+     :fx [[:dispatch [::set-search-term search-text]]
+          [:dispatch [::modal/show ::chooser {::modal/close? false}]]]}))
 
 
 ;; Closes the chooser, optionally with a result. recipe-id is the selected
@@ -104,6 +107,13 @@
 
 
 (rf/reg-sub
+  ::chooser-initial-search
+  :<- [::chooser-state]
+  (fn [state _]
+    (:initial-search state)))
+
+
+(rf/reg-sub
   ::chooser-search-term
   :<- [::chooser-state]
   (fn [state _]
@@ -141,8 +151,9 @@
   [recipe-id]
   (let [per-minute? @(rf/subscribe [::chooser-per-minute?])]
     [:div.is-flex.is-align-content-center.mb-2
-      [:a.is-flex-grow-1 {:on-click #(rf/dispatch [::chooser-expand-recipe recipe-id])}
-       (recipe-io recipe-id {:per-minute? per-minute?})]
+      [:span.is-flex-grow-1
+       (recipe-io recipe-id {:per-minute? per-minute?
+                             :on-info [::chooser-expand-recipe recipe-id]})]
       [:a.is-flex-grow-0.ml-5.has-text-black
        [:span.icon.is-large {:on-click #(rf/dispatch [::finish-chooser recipe-id])}
         [:i.bi-plus-circle]]]]))
@@ -198,27 +209,39 @@
   []
   (let [recipe-ids @(rf/subscribe [::chooser-recipe-ids])
         expanded-id @(rf/subscribe [::chooser-expanded-recipe])
-        per-minute? @(rf/subscribe [::chooser-per-minute?])]
+        initial-search @(rf/subscribe [::chooser-initial-search])]
+        ;; per-minute? @(rf/subscribe [::chooser-per-minute?])]
     [:div.modal-card
      [:header.modal-card-head
       [:p.modal-card-title "Add a recipe"]
       [:button.delete {:on-click #(rf/dispatch [::finish-chooser nil])}]]
      [:section.modal-card-body
-      [forms/search-field {:placeholder "Search by name or output"
+      [forms/search-field {:initial initial-search
+                           :placeholder "Search by name or output"
                            :auto-focus? true
                            :on-update [::set-search-term]}]
       [:hr.hr]
       [:div.content
-       [:p.help
-        (when per-minute? "Showing units per minute. ")
-        "Click on a recipe for more details or add it with "
-        [:span.icon.is-small [:i.bi-plus-circle]]
-        "."]]
+       #_[:p.help
+          (when per-minute? "Showing units per minute. ")
+          "Click on a recipe for more details or add it with "
+          [:span.icon.is-small [:i.bi-plus-circle]]
+          "."]]
       [:div.is-flex.is-flex-direction-column
        (forall [recipe-id recipe-ids]
          (if (= recipe-id expanded-id)
            ^{:key recipe-id} [chooser-recipe-expanded recipe-id]
            ^{:key recipe-id} [chooser-recipe-brief recipe-id]))]]]))
+
+
+;;
+;; Recipe details modal
+;;
+
+(rf/reg-event-fx
+  ::show-details
+  (fn [_ [_ recipe-id]]
+    {:fx [[:dispatch [::modal/show ::details {:recipe-id recipe-id}]]]}))
 
 
 (defmethod modal/content ::details

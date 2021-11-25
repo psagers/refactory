@@ -196,8 +196,7 @@
         (forall [[recipe-id hops] results]
           ^{:key recipe-id}
           [:tr
-           [:td (recipes/recipe-io recipe-id {:per-minute? (= badge-mode :continuous)
-                                              :info? true})]
+           [:td (recipes/recipe-io recipe-id {:per-minute? (= badge-mode :continuous)})]
            [:td hops]])]
        [:tfoot
         [:tr

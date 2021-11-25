@@ -424,13 +424,15 @@
     :where [?factory-id :factory/jobs ?job-id]])
 
 
-;; Jobs and their recipe-ids for a given factory.
-(rp/reg-query-sub
-  ::job-set
-  '[:find ?job-id ?recipe-id
-    :in $ ?factory-id
-    :where [?factory-id :factory/jobs ?job-id]
-           [?job-id :job/recipe-id ?recipe-id]])
+;; All jobs in a factory.
+(rp/reg-sub
+  ::jobs
+  (fn [[_ factory-id] _]
+    (rf/subscribe [::job-ids factory-id]))
+  (fn [job-ids _]
+    {:type :pull-many
+     :pattern '[:db/id :job/recipe-id :job/disabled? :job/count]
+     :ids job-ids}))
 
 
 ;; Takes a set of [job-id recipe-id] tuples and returns a sequence of job-ids
@@ -438,10 +440,11 @@
 (rf/reg-sub
   ::sorted-job-ids
   (fn [[_ factory-id] _]
-    (rf/subscribe [::job-set factory-id]))
-  (fn [job-set _]
-    (->> (sort-by (comp :value game/id->recipe second) job-set)
-         (mapv first))))
+    (rf/subscribe [::jobs factory-id]))
+  (fn [jobs _]
+    (->> (sort-by (juxt (comp boolean :job/disabled?)
+                        (comp :value game/id->recipe :job/recipe-id)) jobs)
+         (mapv :db/id))))
 
 
 ;; The :mode of the job's factory.
@@ -462,7 +465,7 @@
 
 (rp/reg-pull-sub
   ::job
-  '[:db/id :job/recipe-id :job/count :job/disabled?])
+  '[:db/id :job/recipe-id :job/disabled? :job/count])
 
 
 (defn- sorted-item-map
@@ -753,12 +756,11 @@
         [job-instance-cells job-id]
         [job-count-cells job-id])
 
-      [:td (recipes/recipe-io recipe-id (merge {:info? true}
-                                               (cond
-                                                 disabled? {:multiple 0}
-                                                 continuous? {:multiple (/ production-pct 100)
-                                                              :per-minute? true}
-                                                 :else {:multiple (:job/count job)})))]
+      [:td (recipes/recipe-io recipe-id (cond
+                                          disabled? {:multiple 0}
+                                          continuous? {:multiple (/ production-pct 100)
+                                                       :per-minute? true}
+                                          :else {:multiple (:job/count job)}))]
       [:td.has-text-right [job-actions job-id]]]
 
      (when (= expanded-id job-id)
@@ -955,9 +957,9 @@
 
 
 (defn- chooser-link
-  [factory-id item-id]
-  [:a.has-text-black {:href "#"
-                      :on-click (ui/link-dispatch [::recipes/show-chooser {:search-term (-> item-id game/id->item :display)
+  [factory-id item-id continuous?]
+  [:a.has-text-black {:on-click (ui/link-dispatch [::recipes/show-chooser {:search-text (-> item-id game/id->item :display)
+                                                                           :per-minute? continuous?
                                                                            :on-success [::add-job factory-id]}])}
    [:span.icon [:i.bi-plus-circle.is-small]]])
 
@@ -987,7 +989,7 @@
            [:td (format-total in)]
            [:td]
            [:td (format-total (- in))]
-           [:td (chooser-link factory-id item-id)]])
+           [:td (chooser-link factory-id item-id continuous?)]])
         (forall [[item-id {:keys [in out]}] local-totals]
           (let [net (- out in)]
             ^{:key item-id}
@@ -996,7 +998,7 @@
              [:td (format-total in)]
              [:td (format-total out)]
              [:td {:class [(when (neg? net) "has-text-danger")]} (format-total net)]
-             [:td (when continuous? (chooser-link factory-id item-id))]]))
+             [:td (when continuous? (chooser-link factory-id item-id continuous?))]]))
         (forall [[item-id {:keys [out]}] output-totals]
           ^{:key item-id}
           [:tr
@@ -1004,7 +1006,7 @@
            [:td]
            [:td (format-total out)]
            [:td (format-total out)]
-           [:td (when continuous? (chooser-link factory-id item-id))]])]]]))
+           [:td (when continuous? (chooser-link factory-id item-id continuous?))]])]]]))
 
 
 (defn root []

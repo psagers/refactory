@@ -1,4 +1,5 @@
 (ns refactory.app.util
+  (:require [re-frame.core :as rf])
   (:require-macros [refactory.app.util]))
 
 
@@ -42,3 +43,7 @@
 
 
 (def conj-set (fnil conj #{}))
+
+
+;; Quick access to a subscription.
+(def <sub (comp deref rf/subscribe))
