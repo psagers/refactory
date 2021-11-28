@@ -4,8 +4,9 @@
             [fork.re-frame :as fork]
             [re-frame.core :as rf]
             [re-posh.core :as rp]
+            [goog.functions :refer [debounce]]
             [reagent.core :as r]
-            [reagent.ratom :refer [reaction]]
+            [reagent.ratom :as ratom :refer [reaction]]
             [refactory.app.db :as db]
             [refactory.app.game :as game]
             [refactory.app.pages :as pages]
@@ -243,19 +244,13 @@
 (rp/reg-event-ds
   ::remove-instance
   (fn [ds [_ job-id]]
-    ;; Try to delete an unmodified instance (100%), but fall back to whatever
-    ;; we find.
-    (let [instance-id (or (ds/q '[:find ?instance-id .
-                                  :in $ ?job-id
-                                  :where [?job-id :job/instances ?instance-id]
-                                         (or [?instance-id :instance/overdrive 100]
-                                             [(missing? $ ?instance-id :instance/overdrive)])]
-                                ds job-id)
-                          (ds/q '[:find ?instance-id .
-                                  :in $ ?job-id
-                                  :where [?job-id :job/instances ?instance-id]]
-                                ds job-id))]
-      [[:db/retractEntity instance-id]])))
+    (let [instance-ids (ds/q '[:find [?instance-id ...]
+                               :in $ ?job-id
+                               :where [?job-id :job/instances ?instance-id]]
+                           ds job-id)
+          instance-id (first (sort-by - instance-ids))]
+      [(when instance-id
+         [:db/retractEntity instance-id])])))
 
 
 (rf/reg-event-db
@@ -273,72 +268,18 @@
     [[:db/retractEntity instance-id]]))
 
 
-(rf/reg-event-fx
-  ::edit-overdrive
-  [(rf/inject-cofx :ds)]
-  (fn [{:keys [db ds]} [_ instance-id]]
-    (let [value (:instance/overdrive (ds/entity ds instance-id) default-overdrive)]
-      {:db (assoc-in db [::ui :overdrive-inputs instance-id] value)})))
-
-
-(rf/reg-event-db
-  ::type-overdrive-input
-  (fn [db [_ instance-id value]]
-    (cond-> db
-      (<= 0 value 250)
-      (assoc-in [::ui :overdrive-inputs instance-id] value))))
-
-
-(rf/reg-event-fx
-  ::save-overdrive
-  (fn [{:keys [db]} [_ instance-id]]
-    (let [value (get-in db [::ui :overdrive-inputs instance-id])]
-        {:db (update-in db [::ui :overdrive-inputs] dissoc instance-id)
-         :fx [[:transact [(if (= value default-overdrive)
-                            [:db/retract instance-id :instance/overdrive]
-                            [:db/add instance-id :instance/overdrive value])]]]})))
-
-
 (rp/reg-event-ds
   ::set-overdrive
   (fn [_ [_ instance-id value]]
-    (if-some [overdrive (db/decode-value :instance/overdrive value)]
-      [[:db/add instance-id :instance/overdrive overdrive]]
-      [])))
+    [(when-some [overdrive (db/decode-value :instance/overdrive value)]
+      [:db/add instance-id :instance/overdrive overdrive])]))
 
 
 (rp/reg-event-ds
   ::set-job-count
   (fn [_ [_ job-id value]]
-    (if-some [value (db/decode-value :job/count value)]
-      [[:db/add job-id :job/count value]]
-      [])))
-
-
-(rf/reg-event-fx
-  ::edit-job-count
-  [(rf/inject-cofx :ds)]
-  (fn [{:keys [db ds]} [_ job-id]]
-    (let [value (:job/count (ds/entity ds job-id) default-job-count)]
-      {:db (assoc-in db [::ui :job-count-inputs job-id] value)})))
-
-
-(rf/reg-event-db
-  ::type-job-count-input
-  (fn [db [_ job-id value]]
-    (cond-> db
-      (>= value 0)
-      (assoc-in [::ui :job-count-inputs job-id] value))))
-
-
-(rf/reg-event-fx
-  ::save-job-count
-  (fn [{:keys [db]} [_ job-id]]
-    (let [value (get-in db [::ui :job-count-inputs job-id])]
-        {:db (update-in db [::ui :job-count-inputs] dissoc job-id)
-         :fx [[:transact [(if (= value default-job-count)
-                            [:db/retract job-id :job/count]
-                            [:db/add job-id :job/count value])]]]})))
+    [(when-some [value (db/decode-value :job/count value)]
+       [:db/add job-id :job/count value])]))
 
 
 ;;
@@ -456,6 +397,15 @@
            [(get-else $ ?factory-id :factory/mode :continuous) ?mode]])
 
 
+(rp/reg-query-sub
+  ::job-overdrive-modified?
+  '[:find ?instance-id .
+    :in $ ?job-id
+    :where [?job-id :job/instances ?instance-id]
+           [?instance-id :instance/overdrive ?overdrive]
+           [(not= ?overdrive 100)]])
+
+
 (rf/reg-sub
   ::expanded-job-id
   :<- [::ui]
@@ -522,16 +472,9 @@
   ::job-production-factor
   (fn [[_ job-id] _]
     [(rf/subscribe [::job job-id])
-     (rf/subscribe [::instance-overdrives job-id])
-     (rf/subscribe [::overdrive-inputs])])
-  (fn [[job overdrives inputs] _]
-    (if-not (:job/disabled? job)
-      (transduce (comp (map (fn [[k v]]
-                              (get inputs k v)))
-                       (map #(/ % 100)))
-                 +
-                 overdrives)
-      0)))
+     (rf/subscribe [::job-production-pct job-id])])
+  (fn [[job pct] _]
+    (if (:job/disabled? job) 0 (/ pct 100))))
 
 
 ;; For cotinuous mode.
@@ -630,20 +573,6 @@
 
 
 (rf/reg-sub
-  ::overdrive-inputs
-  :<- [::ui]
-  (fn [ui _]
-    (get ui :overdrive-inputs)))
-
-
-(rf/reg-sub
-  ::overdrive-input
-  :<- [::overdrive-inputs]
-  (fn [inputs [_ instance-id]]
-    (get inputs instance-id)))
-
-
-(rf/reg-sub
   ::job-count-inputs
   :<- [::ui]
   (fn [ui _]
@@ -682,6 +611,22 @@
         "Delete"]]]]))
 
 
+(defn- overdrive-input
+  [instance-id initial]
+  (r/with-let [rvalue (ratom/atom (str initial))
+               update-overdrive (debounce #(rf/dispatch [::set-overdrive instance-id @rvalue]) 250)]
+    [:div.field.has-addons.ml-3
+     [:div.control
+      [:input.input.is-small {:type "number", :size 6
+                              :min 0, :max 250
+                              :value @rvalue
+                              :on-change #(let [value (-> % .-target .-value)]
+                                            (reset! rvalue value)
+                                            (update-overdrive))}]]
+     [:div.control
+      [:a.button.is-static.is-small "%"]]]))
+
+
 (defn- expanded-job-row
   [job-id]
   [:tr
@@ -689,14 +634,7 @@
     [:div.is-flex.is-flex-wrap-wrap
      (forall [[instance-id overdrive] (sort @(rf/subscribe [::instance-overdrives job-id]))]
        ^{:key instance-id}
-       [:div.field.has-addons.ml-3
-        [:div.control
-         [:input.input.is-small {:type "number", :size 6
-                                 :min 0, :max 250
-                                 :value overdrive
-                                 :on-change #(rf/dispatch [::set-overdrive instance-id (-> % .-target .-value)])}]]
-        [:div.control
-         [:a.button.is-static.is-small "%"]]])]]])
+       [overdrive-input instance-id overdrive])]]])
 
 
 (defn- job-count-cells
@@ -718,10 +656,11 @@
   [job-id]
   (let [job @(rf/subscribe [::job job-id])
         instance-count @(rf/subscribe [::job-instance-count job-id])
+        overdrive-modified? @(rf/subscribe [::job-overdrive-modified? job-id])
         expanded-id @(rf/subscribe [::expanded-job-id])
         disabled? (:job/disabled? job)]
     [:<>
-     [:td (or instance-count 0)]
+     [:td (or instance-count 0) (when overdrive-modified? [:sup "*"])]
      [:td [:div.buttons.has-addons.is-flex-wrap-nowrap
            [:button.button.is-small {:disabled disabled?
                                      :on-click #(rf/dispatch [::remove-instance job-id])}
