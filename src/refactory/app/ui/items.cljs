@@ -4,7 +4,7 @@
             [refactory.app.game :as game]
             [refactory.app.ui.forms :as forms]
             [refactory.app.ui.modal :as modal]
-            [refactory.app.util :refer [forall]]))
+            [refactory.app.util :refer [cofx->fx forall]]))
 
 ;;
 ;; General UI
@@ -89,39 +89,75 @@
 ;; This is a modal with the list of available ingredients and a search box.
 ;;
 
+(defn- toggle-item-fx
+  [fx item-id]
+  (update-in fx [:db ::chooser :selected]
+             #(if (contains? % item-id)
+                (disj % item-id)
+                (conj % item-id))))
+
+
+(defn- reset-chooser-fx
+  [fx]
+  (update fx :db dissoc ::chooser))
+
+
+(defn- finish-chooser-fx
+  [fx]
+  (let [{:keys [multiple? selected on-success on-cancel]} (get-in fx [:db ::chooser])
+        event (cond
+                multiple?         (some-> on-success (conj selected))
+                (empty? selected) on-cancel
+                :else             (some-> on-success (conj (first selected))))]
+    (-> fx
+        (reset-chooser-fx)
+        (update :fx into [[:dispatch [::modal/hide ::chooser]]
+                          (when event [:dispatch event])]))))
+
+
 ;; Opens the ingredient chooser modal. The caller provides dispatch vectors to
 ;; get the result: on-success (with the item-id appended) if an item is chosen,
 ;; on-cancel if the modal is dismissed.
 (rf/reg-event-fx
   ::show-chooser
-  (fn [{:keys [db]} [_ {:keys [search-term on-success on-cancel]}]]
+  (fn [{:keys [db]} [_ {:keys [multiple? initial search-term on-success on-cancel]}]]
     (let [search-term (str/lower-case (or search-term ""))]
-      {:db (assoc db ::chooser {:search-term search-term
+      {:db (assoc db ::chooser {:multiple? multiple?
+                                :search-term search-term
+                                :initial (set initial)
+                                :selected (set initial)
                                 :on-success on-success
                                 :on-cancel on-cancel})
        :fx [[:dispatch [::modal/show ::chooser {::modal/close? false}]]]})))
 
 
-;; Closes the chooser, optionally with a result. item-id is the selected item
-;; or nil if the modal was closed.
 (rf/reg-event-fx
-  ::finish-chooser
-  (fn [{:keys [db]} [_ item-id]]
-    (let [{:keys [on-success on-cancel]} (::chooser db)]
-      {:fx [[:dispatch [::modal/hide ::chooser]]
-            [:dispatch [::reset-chooser]]
-            (cond
-              (and (some? item-id) on-success)
-              [:dispatch (conj on-success item-id)]
-
-              (and (nil? item-id) on-cancel)
-              [:dispatch on-cancel])]})))
+  ::item-selected
+  (fn [cofx [_ item-id]]
+    (let [multiple? (get-in cofx [:db ::chooser :multiple?])
+          fx (cofx->fx cofx)]
+      (cond-> (toggle-item-fx fx item-id)
+        (not multiple?) (finish-chooser-fx)))))
 
 
 (rf/reg-event-db
   ::reset-chooser
   (fn [db _]
-    (dissoc db ::chooser)))
+    (update db ::chooser #(assoc % :selected (:initial %)))))
+
+
+(rf/reg-event-fx
+  ::cancel-chooser
+  (fn [{:keys [db]} _]
+    (let [{:keys [on-cancel]} (::chooser db)]
+      {:fx [[:dispatch [::modal/hide ::chooser]]
+            (when on-cancel [:dispatch on-cancel])]})))
+
+
+(rf/reg-event-fx
+  ::finish-chooser
+  (fn [cofx _]
+    (finish-chooser-fx (cofx->fx cofx))))
 
 
 (rf/reg-event-db
@@ -137,10 +173,24 @@
 
 
 (rf/reg-sub
+  ::chooser-multiple?
+  :<- [::chooser-state]
+  (fn [state _]
+    (:multiple? state)))
+
+
+(rf/reg-sub
   ::chooser-search-term
   :<- [::chooser-state]
   (fn [state _]
     (:search-term state)))
+
+
+(rf/reg-sub
+  ::chooser-selected
+  :<- [::chooser-state]
+  (fn [state _]
+    (:selected state)))
 
 
 (rf/reg-sub
@@ -157,18 +207,31 @@
 
 (defmethod modal/content ::chooser
   []
-  (let [item-ids @(rf/subscribe [::chooser-item-ids])]
+  (let [item-ids @(rf/subscribe [::chooser-item-ids])
+        multiple? @(rf/subscribe [::chooser-multiple?])
+        item-id->selected? @(rf/subscribe [::chooser-selected])]
     [:div.modal-card
      [:header.modal-card-head
       [:p.modal-card-title "Add an ingredient"]
-      [:button.delete {:on-click #(rf/dispatch [::finish-chooser nil])}]]
+      [:button.delete {:on-click #(rf/dispatch [::cancel-chooser])}]]
      [:section.modal-card-body
       [forms/search-field {:placeholder "Search by name"
                            :auto-focus? true
                            :on-update [::set-search-term]}]
       [:hr.hr]
-      [:div.is-flex.is-justify-content-space-between.is-flex-wrap-wrap
+      [:div.is-flex.is-justify-content-flex-start.is-flex-wrap-wrap
        (forall [item-id item-ids]
          ^{:key item-id}
-         [:button.button.is-large.m-1 {:on-click #(rf/dispatch [::finish-chooser item-id])}
-          (item-icon item-id {:class "is-large"})])]]]))
+         [:button.button.is-large.m-1 {:class [(when (item-id->selected? item-id) "is-dark")]
+                                       :on-click #(rf/dispatch [::item-selected item-id])}
+          (item-icon item-id {:class "is-large"})])]]
+     (when multiple?
+       [:footer.modal-card-foot.is-justify-content-space-between
+        [:div.is-flex.is-justify-content-flex-start
+         [:button.button {:on-click #(rf/dispatch [::reset-chooser])}
+          "Reset"]]
+        [:div.is-flex.is-justify-content-flex-end
+         [:button.button {:on-click #(rf/dispatch [::cancel-chooser])}
+          "Cancel"]
+         [:button.button.is-success {:on-click #(rf/dispatch [::finish-chooser])}
+          "Done"]]])]))

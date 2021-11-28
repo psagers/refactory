@@ -45,5 +45,10 @@
 (def conj-set (fnil conj #{}))
 
 
+(defn cofx->fx
+  [{:keys [db]}]
+  {:db db, :fx []})
+
+
 ;; Quick access to a subscription.
 (def <sub (comp deref rf/subscribe))

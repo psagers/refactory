@@ -9,7 +9,7 @@
             [refactory.app.game :as game]
             [refactory.app.ui.items :as items]
             [refactory.app.ui.recipes :as recipes]
-            [refactory.app.util :refer [forall]]))
+            [refactory.app.util :refer [<sub forall]]))
 
 
 (def default-exclusivity (db/attr->default :survey/exclusivity))
@@ -44,9 +44,18 @@
 
 
 (rp/reg-event-ds
-  ::add-ingredient
-  (fn [_ [_ item-id]]
-    [[:db/add [:page/id :survey] :survey/item-ids item-id]]))
+  ::set-ingredients
+  (fn [ds [_ item-ids]]
+    (let [target (set item-ids)
+          current (set (ds/q '[:find [?item-id ...]
+                               :where [?e :page/id :survey]
+                                      [?e :survey/item-ids ?item-id]]
+                             ds))]
+      (concat
+        (for [item-id (set/difference target current)]
+          [:db/add [:page/id :survey] :survey/item-ids item-id])
+        (for [item-id (set/difference current target)]
+          [:db/retract [:page/id :survey] :survey/item-ids item-id])))))
 
 
 (rp/reg-event-ds
@@ -211,7 +220,10 @@
     [:div.box
      [options-form]
      [ingredients-table]
-     [:button.button.is-primary {:on-click #(rf/dispatch [::items/show-chooser {:on-success [::add-ingredient]}])}
-      "Add an ingredient"]]]
+     [:button.button.is-primary
+      {:on-click #(rf/dispatch [::items/show-chooser {:multiple? true
+                                                      :initial (<sub [::item-ids])
+                                                      :on-success [::set-ingredients]}])}
+      "Select ingredients"]]]
    [:div.column
     [results-table]]])
