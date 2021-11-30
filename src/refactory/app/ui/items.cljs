@@ -115,9 +115,11 @@
                           (when event [:dispatch event])]))))
 
 
-;; Opens the ingredient chooser modal. The caller provides dispatch vectors to
-;; get the result: on-success (with the item-id appended) if an item is chosen,
-;; on-cancel if the modal is dismissed.
+;; Opens the ingredient chooser modal. The caller provides optional dispatch
+;; vectors to get the result:
+;;   (conj on-success item-ids) if items are chosen with multiple? true
+;;   (conj on-success item-id)  if an item is chosen with multiple? false
+;;   on-cancel if the modal is dismissed
 (rf/reg-event-fx
   ::show-chooser
   (fn [{:keys [db]} [_ {:keys [multiple? initial search-term on-success on-cancel]}]]

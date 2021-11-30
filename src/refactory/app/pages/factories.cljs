@@ -614,7 +614,7 @@
 (defn- overdrive-input
   [instance-id initial]
   (r/with-let [rvalue (ratom/atom (str initial))
-               update-overdrive (debounce #(rf/dispatch [::set-overdrive instance-id @rvalue]) 250)]
+               set-overdrive (debounce #(rf/dispatch [::set-overdrive instance-id %]) 250)]
     [:div.field.has-addons.ml-3
      [:div.control
       [:input.input.is-small {:type "number", :size 6
@@ -622,7 +622,7 @@
                               :value @rvalue
                               :on-change #(let [value (-> % .-target .-value)]
                                             (reset! rvalue value)
-                                            (update-overdrive))}]]
+                                            (set-overdrive value))}]]
      [:div.control
       [:a.button.is-static.is-small "%"]]]))
 
@@ -638,18 +638,22 @@
 
 
 (defn- job-count-cells
-  [job-id]
-  (let [job @(rf/subscribe [::job job-id])
-        disabled? (:job/disabled? job)]
-    [:td {:colSpan 2}
-     [:div.field
-      [:div.control
-       [:input.input.is-small
-        {:type "number", :size 5
-         :disabled disabled?
-         :min 0
-         :value (or (:job/count job) 1)
-         :on-change #(rf/dispatch [::set-job-count job-id (-> % .-target .-value)])}]]]]))
+  [job-id initial]
+  (r/with-let [rvalue (ratom/atom (str initial))
+               set-job-count (debounce #(rf/dispatch [::set-job-count job-id %]) 250)]
+    (let [job @(rf/subscribe [::job job-id])
+          disabled? (:job/disabled? job)]
+      [:td {:colSpan 2}
+       [:div.field
+        [:div.control
+         [:input.input.is-small
+          {:type "number", :size 5
+           :disabled disabled?
+           :min 0
+           :value @rvalue
+           :on-change #(let [value (-> % .-target .-value)]
+                         (reset! rvalue value)
+                         (set-job-count value))}]]]])))
 
 
 (defn- job-instance-cells
@@ -693,7 +697,7 @@
 
       (if continuous?
         [job-instance-cells job-id]
-        [job-count-cells job-id])
+        [job-count-cells job-id (:job/count job)])
 
       [:td (recipes/recipe-io recipe-id (cond
                                           disabled? {:multiple 0}
