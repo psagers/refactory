@@ -211,7 +211,7 @@
   []
   (let [item-ids @(rf/subscribe [::chooser-item-ids])
         multiple? @(rf/subscribe [::chooser-multiple?])
-        item-id->selected? @(rf/subscribe [::chooser-selected])]
+        selected @(rf/subscribe [::chooser-selected])]
     [:div.modal-card
      [:header.modal-card-head
       [:p.modal-card-title "Add an ingredient"]
@@ -224,7 +224,7 @@
       [:div.is-flex.is-justify-content-flex-start.is-flex-wrap-wrap
        (forall [item-id item-ids]
          ^{:key item-id}
-         [:button.button.is-large.m-1 {:class [(when (item-id->selected? item-id) "is-dark")]
+         [:button.button.is-large.m-1 {:class [(when (contains? selected item-id) "is-dark")]
                                        :on-click #(rf/dispatch [::item-selected item-id])}
           (item-icon item-id {:class "is-large"})])]]
      (when multiple?
