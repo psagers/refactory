@@ -730,7 +730,7 @@
         [job-row job-id])]
      [:tfoot.has-text-left
       [:tr
-       [:th.has-text-left
+       [:th
         [:button.button.is-primary {:on-click #(rf/dispatch [::recipes/show-chooser {:per-minute? continuous?
                                                                                      :on-success [::add-job factory-id]}])}
          [:span.icon [:i.bi-plus-circle]]
@@ -914,9 +914,9 @@
         input-totals @(rf/subscribe [::factory-input-totals factory-id])
         local-totals @(rf/subscribe [::factory-local-totals factory-id])
         output-totals @(rf/subscribe [::factory-output-totals factory-id])]
-    [:div.ml-auto.has-text-right {:style {:position "sticky"
-                                          :top "1rem"}}
-      [:table.table.is-fullwidth.is-size-7.is-size-6-widescreen
+    [:div {:style {:position "sticky"
+                   :top "1rem"}}
+      [:table.table.is-fullwidth.is-size-7.is-size-6-widescreen.has-text-right
        [:thead
         [:tr
          [:th (when continuous? "/min:")]
@@ -928,7 +928,7 @@
         (forall [[item-id {:keys [in]}] input-totals]
           ^{:key item-id}
           [:tr
-           [:td (items/item-icon item-id)]
+           [:td.has-text-left (items/item-icon item-id)]
            [:td (format-total in)]
            [:td]
            [:td (format-total (- in))]
@@ -937,7 +937,7 @@
           (let [net (- out in)]
             ^{:key item-id}
             [:tr
-             [:td (items/item-icon item-id)]
+             [:td.has-text-left (items/item-icon item-id)]
              [:td (format-total in)]
              [:td (format-total out)]
              [:td {:class [(when (neg? net) "has-text-danger")]} (format-total net)]
@@ -945,7 +945,7 @@
         (forall [[item-id {:keys [out]}] output-totals]
           ^{:key item-id}
           [:tr
-           [:td (items/item-icon item-id)]
+           [:td.has-text-left (items/item-icon item-id)]
            [:td]
            [:td (format-total out)]
            [:td (format-total out)]

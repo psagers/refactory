@@ -190,7 +190,7 @@
   (let [results @(rf/subscribe [::buildable-recipe-ids-by-hop])
         badge-mode @(rf/subscribe [::badge-mode])]
     (when (seq results)
-      [:table.table.is-fullwidth
+      [:table.table.is-fullwidth.has-text-left
        [:thead
         [:tr
          [:th
