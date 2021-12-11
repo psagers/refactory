@@ -1,0 +1,4 @@
+#!/bin/sh
+
+
+clj-kondo --lint `clojure -A:prep -Spath` --dependencies --parallel --copy-configs                                                                                  [I]

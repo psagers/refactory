@@ -1,7 +1,7 @@
 (ns refactory.app.game.indexer
   "Indexes the static game data at load time."
   (:require [clojure.string :as str]
-            [refactory.app.util :refer [map-by per-minute]]))
+            [refactory.app.util :refer [map-by]]))
 
 
 (defn- annotated-items
@@ -10,14 +10,27 @@
     (assoc item :search-terms [(str/lower-case display)])))
 
 
-(defn- recipe->io-value
+;; An alternate approach to recipe value that calculates value per minute. Kind
+;; of a toss-up.
+#_(defn- recipe->io-value
+    [id->item recipe output?]
+    (letfn [(io->value [{:keys [item-id amount]}]
+              (-> (id->item item-id)
+                  (:value)
+                  (* amount)))]
+      (-> (transduce (map io->value) + (get recipe (if output? :output :input)))
+          (per-minute (:duration recipe)))))
+
+
+(defn- recipe->item-value
+  "Returns the combined value of the input or output items in a recipe.
+
+  This just combines item values; it doesn't try to calculate value per
+  minute."
   [id->item recipe output?]
-  (letfn [(io->value [{:keys [item-id amount]}]
-            (-> (id->item item-id)
-                (:value)
-                (* amount)))]
-    (-> (transduce (map io->value) + (get recipe (if output? :output :input)))
-        (per-minute (:duration recipe)))))
+  (transduce (map (comp :value id->item :item-id))
+             +
+             (get recipe (if output? :output :input))))
 
 
 (defn- recipe->value
@@ -29,9 +42,9 @@
   A few recipes have outputs without meaningful values, in which case we'll
   fall back to the value of the inputs."
   [id->item recipe]
-  (let [output-value (recipe->io-value id->item recipe true)]
+  (let [output-value (recipe->item-value id->item recipe true)]
     (if (zero? output-value)
-      (recipe->io-value id->item recipe false)
+      (recipe->item-value id->item recipe false)
       output-value)))
 
 

@@ -4,7 +4,7 @@
             [refactory.app.game :as game]
             [refactory.app.ui.forms :as forms]
             [refactory.app.ui.modal :as modal]
-            [refactory.app.util :refer [cofx->fx forall]]))
+            [refactory.app.util :refer [<sub cofx->fx forall]]))
 
 ;;
 ;; General UI
@@ -122,9 +122,11 @@
 ;;   on-cancel if the modal is dismissed
 (rf/reg-event-fx
   ::show-chooser
-  (fn [{:keys [db]} [_ {:keys [multiple? initial search-term on-success on-cancel]}]]
+  (fn [{:keys [db]} [_ {:keys [title explanation multiple? initial search-term on-success on-cancel]}]]
     (let [search-term (str/lower-case (or search-term ""))]
-      {:db (assoc db ::chooser {:multiple? multiple?
+      {:db (assoc db ::chooser {:title (or title (if multiple? "Select items" "Select an item"))
+                                :explanation explanation
+                                :multiple? multiple?
                                 :search-term search-term
                                 :initial (set initial)
                                 :selected (set initial)
@@ -175,6 +177,20 @@
 
 
 (rf/reg-sub
+  ::chooser-title
+  :<- [::chooser-state]
+  (fn [state _]
+    (:title state)))
+
+
+(rf/reg-sub
+  ::chooser-explanation
+  :<- [::chooser-state]
+  (fn [state _]
+    (:explanation state)))
+
+
+(rf/reg-sub
   ::chooser-multiple?
   :<- [::chooser-state]
   (fn [state _]
@@ -209,25 +225,25 @@
 
 (defmethod modal/content ::chooser
   []
-  (let [item-ids @(rf/subscribe [::chooser-item-ids])
-        multiple? @(rf/subscribe [::chooser-multiple?])
-        selected @(rf/subscribe [::chooser-selected])]
+  (let [selected (<sub [::chooser-selected])]
     [:div.modal-card
      [:header.modal-card-head
-      [:p.modal-card-title "Add an ingredient"]
+      [:p.modal-card-title (<sub [::chooser-title])]
       [:button.delete {:on-click #(rf/dispatch [::cancel-chooser])}]]
      [:section.modal-card-body
       [forms/search-field {:placeholder "Search by name"
                            :auto-focus? true
                            :on-update [::set-search-term]}]
       [:hr.hr]
+      (when-some [explanation (<sub [::chooser-explanation])]
+        [:p.block explanation])
       [:div.is-flex.is-justify-content-flex-start.is-flex-wrap-wrap
-       (forall [item-id item-ids]
+       (forall [item-id (<sub [::chooser-item-ids])]
          ^{:key item-id}
          [:button.button.is-large.m-1 {:class [(when (contains? selected item-id) "is-dark")]
                                        :on-click #(rf/dispatch [::item-selected item-id])}
           (item-icon item-id {:class "is-large"})])]]
-     (when multiple?
+     (when (<sub [::chooser-multiple?])
        [:footer.modal-card-foot.is-justify-content-space-between
         [:div.is-flex.is-justify-content-flex-start
          [:button.button {:on-click #(rf/dispatch [::reset-chooser])}

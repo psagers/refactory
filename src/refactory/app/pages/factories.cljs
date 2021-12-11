@@ -1,10 +1,13 @@
 (ns refactory.app.pages.factories
-  (:require [clojure.walk :as walk]
+  (:require [clojure.set :as set]
+            [clojure.walk :as walk]
             [datascript.core :as ds]
             [fork.re-frame :as fork]
             [re-frame.core :as rf]
             [re-posh.core :as rp]
             [goog.functions :refer [debounce]]
+            [loom.alg :as alg]
+            [loom.graph :as graph]
             [reagent.core :as r]
             [reagent.ratom :as ratom :refer [reaction]]
             [refactory.app.db :as db]
@@ -15,7 +18,8 @@
             [refactory.app.ui.items :as items]
             [refactory.app.ui.modal :as modal]
             [refactory.app.ui.recipes :as recipes]
-            [refactory.app.util :refer [compare-by forall per-minute]]))
+            [refactory.app.util :refer [<sub compare-by forall per-minute]]
+            [taoensso.encore :refer [map-vals]]))
 
 
 (defmethod db/ds-migration ::_
@@ -116,9 +120,38 @@
      :fx [[:transact [[:db/add factory-id :factory/mode mode]]]]}))
 
 
+(defn- forced-inputs
+  [ds factory-id]
+  (set (ds/q '[:find [?input ...]
+               :in $ ?factory-id
+               :where [?factory-id :factory/inputs ?input]]
+             ds factory-id)))
+
+
+(rf/reg-event-fx
+  ::select-forced-inputs
+  [(rp/inject-cofx :ds)]
+  (fn [{:keys [ds]} [_ factory-id]]
+    {:fx [[:dispatch [::items/show-chooser {:title "Select inputs"
+                                            :explanation "Manually select items that will always be considered inputs to the factory."
+                                            :multiple? true
+                                            :initial (forced-inputs ds factory-id)
+                                            :on-success [::set-forced-inputs factory-id]}]]]}))
+
+
+(rp/reg-event-ds
+  ::set-forced-inputs
+  (fn [ds [_ factory-id item-ids]]
+    (let [current (forced-inputs ds factory-id)]
+      (concat
+        (for [item-id (set/difference current item-ids)]
+          [:db/retract factory-id :factory/inputs item-id])
+        (for [item-id (set/difference item-ids current)]
+          [:db/add factory-id :factory/inputs item-id])))))
+
+
 (rf/reg-event-fx
   ::begin-rename-factory
-  [(rp/inject-cofx :ds)]
   (fn [_ [_ factory-id]]
     {:fx [[:dispatch [::modal/show ::rename-factory {:factory-id factory-id
                                                      ::modal/close? false}]]]}))
@@ -292,6 +325,8 @@
     (::ui db)))
 
 
+;; Factories
+
 (rp/reg-query-sub
   ::selected-factory-id
   '[:find ?factory-id .
@@ -343,8 +378,8 @@
 
 
 (rp/reg-query-sub
-  ::factory-instance-count
-  '[:find (count ?instance-id) .
+  ::factory-instances
+  '[:find [?instance-id ...]
     :in $ ?factory-id
     :where [?factory-id :factory/jobs ?job-id]
            (not [?job-id :job/disabled? true])
@@ -352,40 +387,121 @@
 
 
 (rf/reg-sub
-  ::factory-name-input
-  :<- [::ui]
-  (fn [ui _]
-    (get ui :factory-name-input)))
+  ::factory-instance-count
+  (fn [[_ factory-id] _]
+    (rf/subscribe [::factory-instances factory-id]))
+  (fn [instances _]
+    (count instances)))
 
 
 (rp/reg-query-sub
-  ::job-ids
-  '[:find [?job-id ...]
+  ::forced-inputs
+  '[:find [?input ...]
     :in $ ?factory-id
-    :where [?factory-id :factory/jobs ?job-id]])
+    :where [?factory-id :factory/inputs ?input]])
 
 
-;; All jobs in a factory.
+;; Jobs
+
 (rp/reg-sub
-  ::jobs
-  (fn [[_ factory-id] _]
-    (rf/subscribe [::job-ids factory-id]))
+  ::job-ids
+  (fn [_ [_ factory-id disabled?]]
+    {:type :query
+     :query [:find '[?job-id ...]
+             :in '$ '?factory-id
+             :where '[?factory-id :factory/jobs ?job-id]
+                    (if disabled?
+                      '[?job-id :job/disabled? true]
+                      '(not [?job-id :job/disabled? true]))]
+     :variables [factory-id]}))
+
+
+;; Pulls either enabled or disabled jobs with enough information to sort them
+;; (:db/id and :job/recipe-id).
+(rp/reg-sub
+  ::sortable-jobs
+  (fn [[_ factory-id disabled?]]
+    (rf/subscribe [::job-ids factory-id (boolean disabled?)]))
   (fn [job-ids _]
     {:type :pull-many
-     :pattern '[:db/id :job/recipe-id :job/disabled? :job/count]
+     :pattern '[:db/id :job/recipe-id]
      :ids job-ids}))
 
 
-;; Takes a set of [job-id recipe-id] tuples and returns a sequence of job-ids
-;; sorted by recipe value.
+(rf/reg-sub
+  ::sorted-disabled-job-ids
+  (fn [[_ factory-id]]
+    (rf/subscribe [::sortable-jobs factory-id true]))
+  (fn [jobs _]
+    (->> (sort-by (comp game/recipe-sort-key :job/recipe-id) jobs)
+         (mapv :db/id))))
+
+
+(rf/reg-sub
+  ::input-item-ids
+  (fn [[_ factory-id] _]
+    (rf/subscribe [::factory-totals-grouped factory-id]))
+  (fn [{:keys [input-totals]}]
+    (set (keys input-totals))))
+
+
+(defn- job-edges
+  [{job-id :db/id :as job} input-ids]
+  (let [recipe (-> job :job/recipe-id game/id->recipe)]
+    (concat (for [input (:input recipe)]
+              [(:item-id input) job-id])
+            (for [output (:output recipe)
+                  :when (not (contains? input-ids (:item-id output)))]
+              [job-id (:item-id output)]))))
+
+
+(defn- job-graph
+  [jobs input-ids]
+  (apply graph/digraph
+         (concat (map #(vector :input %) input-ids)
+                 (mapcat #(job-edges % input-ids) jobs))))
+
+
+;; Attempts to sort a factory's jobs topographically. This will be nil if the
+;; production graph has any cycles.
+(rf/reg-sub
+  ::graph-sorted-job-ids
+  (fn [[_ factory-id disabled?]]
+    {:jobs (rf/subscribe [::sortable-jobs factory-id (boolean disabled?)])
+     :input-ids (rf/subscribe [::input-item-ids factory-id])})
+  (fn [{:keys [jobs input-ids]} _]
+    (some->> (job-graph jobs input-ids)
+             (alg/topsort)
+             (filter int?))))
+
+
+;; Sorts a factory's jobs by recipe value.
+(rf/reg-sub
+  ::value-sorted-job-ids
+  (fn [[_ factory-id disabled?]]
+    (rf/subscribe [::sortable-jobs factory-id disabled?]))
+  (fn [jobs _]
+    (->> (sort-by (comp game/recipe-sort-key :job/recipe-id) jobs)
+         (mapv :db/id))))
+
+
+;; Attempts to sort a factory's jobs topographically, but falls back on simple
+;; value sorting if necessary.
+(rf/reg-sub-raw
+  ::smart-sorted-job-ids
+  (fn [_ [_ factory-id disabled?]]
+    (reaction
+      (or (<sub [::graph-sorted-job-ids factory-id disabled?])
+          (<sub [::value-sorted-job-ids factory-id disabled?])))))
+
+
 (rf/reg-sub
   ::sorted-job-ids
   (fn [[_ factory-id] _]
-    (rf/subscribe [::jobs factory-id]))
-  (fn [jobs _]
-    (->> (sort-by (juxt (comp boolean :job/disabled?)
-                        (comp :value game/id->recipe :job/recipe-id)) jobs)
-         (mapv :db/id))))
+    [(rf/subscribe [::smart-sorted-job-ids factory-id false])
+     (rf/subscribe [::value-sorted-job-ids factory-id true])])
+  (fn [[enabled disabled] _]
+    (concat enabled disabled)))
 
 
 ;; The :mode of the job's factory.
@@ -418,6 +534,8 @@
   '[:db/id :job/recipe-id :job/disabled? :job/count])
 
 
+;; Aggregations
+
 (defn- sorted-item-map
   "Returns an empty map that sorts item-id keys by item value."
   []
@@ -429,8 +547,8 @@
 
   This is a list of [item-id rate] 2-tuples (rate = units per minute). Consumed
   resources have negative amounts. Note that some recipes produce and consume
-  the same resource, so this isn't quite a map. This aggregates all of a job's
-  instances with their overdrive settings."
+  the same resource, so this isn't quite a map. The factor should account for
+  all instances and their overdrive settings."
   [recipe-id factor]
   (let [{:keys [input output duration]} (game/id->recipe recipe-id)]
     (concat (for [{:keys [item-id amount]} input]
@@ -500,50 +618,52 @@
 
 
 (defn- add-to-totals
-  [m [item-id quantity]]
-  (cond
-    (pos? quantity) (update-in m [item-id :out] (fnil + 0) quantity)
-    (neg? quantity) (update-in m [item-id :in] (fnil + 0) (Math/abs quantity))
-    :else m))
+  ([m] m)
+  ([m [item-id quantity]]
+   (cond
+     (pos? quantity) (update-in m [item-id :out] (fnil + 0) quantity)
+     (neg? quantity) (update-in m [item-id :in] (fnil + 0) (Math/abs quantity))
+     :else m)))
 
 
+;; A map from item-id to maps with :in and :out keys, representing the total
+;; units of that item consumed and produced in the factory, respectively.
 (rf/reg-sub-raw
   ::factory-totals
   (fn [_ [_ factory-id]]
     (reaction
-      (let [factory @(rf/subscribe [::factory factory-id])
+      (let [factory (<sub [::factory factory-id])
+            job-ids (<sub [::job-ids factory-id false])
             sub-id (case (:factory/mode factory default-factory-mode)
                      :continuous ::job-flows
                      :fixed ::job-counts
-                     ::job-flows)  ;; not reached
-            job-ids @(rf/subscribe [::job-ids factory-id])
-            job-quantities (map #(deref (rf/subscribe [sub-id %])) job-ids)]
-        (transduce cat (completing add-to-totals) {} job-quantities)))))
+                     ::job-flows)]  ;; not reached
+        (transduce (mapcat #(<sub [sub-id %]))
+                   add-to-totals
+                   {}
+                   job-ids)))))
 
 
+;; A map with keys :input-totals, :local-totals, and :output-totals, each with
+;; a sorted sub-map from ::factory-totals.
 (rf/reg-sub
-  ::factory-input-totals
+  ::factory-totals-grouped
   (fn [[_ factory-id] _]
-    (rf/subscribe [::factory-totals factory-id]))
-  (fn [totals _]
-    (into (sorted-item-map) (filter (comp nil? :out val)) totals)))
+    [(rf/subscribe [::factory-totals factory-id])
+     (rf/subscribe [::forced-inputs factory-id])])
+  (fn [[totals input-ids] _]
+    (let [input-ids (set input-ids)
+          f (fn [[item-id {:keys [in out]}]]
+              (cond
+                (contains? input-ids item-id) :input-totals
+                (nil? out) :input-totals
+                (nil? in) :output-totals
+                :else :local-totals))]
+      (->> (group-by f totals)
+           (map-vals #(into (sorted-item-map) %))))))
 
 
-(rf/reg-sub
-  ::factory-local-totals
-  (fn [[_ factory-id] _]
-    (rf/subscribe [::factory-totals factory-id]))
-  (fn [totals _]
-    (into (sorted-item-map) (filter (comp (every-pred :in :out) val)) totals)))
-
-
-(rf/reg-sub
-  ::factory-output-totals
-  (fn [[_ factory-id] _]
-    (rf/subscribe [::factory-totals factory-id]))
-  (fn [totals _]
-    (into (sorted-item-map) (filter (comp nil? :in val)) totals)))
-
+;; Instances
 
 (rp/reg-query-sub
   ::job-instance-count
@@ -681,10 +801,10 @@
 
 (defn- job-row
   [job-id]
-  (let [job @(rf/subscribe [::job job-id])
-        production-pct @(rf/subscribe [::job-production-pct job-id])
-        mode @(rf/subscribe [::job-mode job-id])
-        expanded-id @(rf/subscribe [::expanded-job-id])
+  (let [job (<sub [::job job-id])
+        production-pct (<sub [::job-production-pct job-id])
+        mode (<sub [::job-mode job-id])
+        expanded-id (<sub [::expanded-job-id])
         continuous? (= mode :continuous)
         disabled? (:job/disabled? job)
         recipe-id (:job/recipe-id job)
@@ -692,7 +812,7 @@
         builder (-> recipe-id game/id->recipe :builder-id game/id->builder)]
     [:<>
      [:tr.job-row {:class [(when disabled? "has-text-grey")]}
-      [:td [:b (:display recipe)] [:br]
+      [:td [:b (:display recipe) (when ^boolean goog.DEBUG (str " [" job-id "]"))] [:br]
            (if disabled? "(disabled)" (:display builder))]
 
       (if continuous?
@@ -712,10 +832,10 @@
 
 (defn- factory-table-view
   [factory-id]
-  (let [factory @(rf/subscribe [::factory factory-id])
-        instance-count @(rf/subscribe [::factory-instance-count factory-id])
-        continuous? (= (:factory/mode factory) :continuous)
-        job-ids @(rf/subscribe [::sorted-job-ids factory-id])]
+  (let [factory (<sub [::factory factory-id])
+        instance-count (<sub [::factory-instance-count factory-id])
+        job-ids (<sub [::sorted-job-ids factory-id])
+        continuous? (= (:factory/mode factory) :continuous)]
     [:table.table.is-fullwidth.factory-table.is-size-7.is-size-6-widescreen
      [:thead.has-text-left
       [:tr
@@ -767,7 +887,7 @@
 
 (defmethod modal/content ::rename-factory
   [{:keys [factory-id]}]
-  (let [title @(rf/subscribe [::factory-title factory-id])]
+  (let [title (<sub [::factory-title factory-id])]
     [fork/form {:keywordize-keys true
                 :prevent-default? true
                 :clean-on-unmount? true
@@ -791,6 +911,8 @@
          :fixed [:a.dropdown-item {:on-click (ui/link-dispatch [::set-factory-mode factory-id :continuous])}
                  "Continuous mode"]
          nil)
+       [:a.dropdown-item {:on-click (ui/link-dispatch [::select-forced-inputs factory-id])}
+        "Select inputs"]
        [:hr.dropdown-divider]
        [:a.dropdown-item {:on-click (ui/link-dispatch [::begin-rename-factory factory-id])}
         "Rename"]
@@ -803,10 +925,11 @@
 
 (defn- factory-title
   [factory-id]
-  (let [factory @(rf/subscribe [::factory factory-id])]
+  (let [factory (<sub [::factory factory-id])]
     (if (some? factory)
       [:<>
-       [:h1.title (:factory/title factory)]
+       [:h1.title (:factory/title factory)
+        (when ^boolean goog.DEBUG (str " [" factory-id "]"))]
        [factory-actions factory-id]]
       [:h1.title "Add your first factory " [:i.bi-arrow-right]])))
 
@@ -879,24 +1002,23 @@
 
 (defn- factory-select
   [selected-factory-id]
-  (r/with-let [sorted-factories-sub (rf/subscribe [::sorted-factories])]
-    (let [sorted-factories @sorted-factories-sub]
-      [:div.dropdown.is-right.is-hoverable
-       [:div.dropdown-trigger
-        [:button.button {:class [(when (empty? sorted-factories) "is-info")]}
-         [:span "Factories"]
-         [:span.icon.is-small [:i.bi-chevron-down]]]]
-       [:div.dropdown-menu
-        [:div.dropdown-content
-         (forall [{:keys [db/id factory/title]} sorted-factories]
-           ^{:key id}
-           [:a.dropdown-item {:on-click (ui/link-dispatch [::select-factory id])
-                              :class [(when (= id selected-factory-id) "is-active")]}
-            title])
-         (when-not (empty? sorted-factories)
-           [:hr.dropdown-divider])
-         [:a.dropdown-item {:on-click (ui/link-dispatch [::modal/show ::new-factory])}
-          "Add a factory"]]]])))
+  (let [sorted-factories (<sub [::sorted-factories])]
+    [:div.dropdown.is-right.is-hoverable
+     [:div.dropdown-trigger
+      [:button.button {:class [(when (empty? sorted-factories) "is-info")]}
+       [:span "Factories"]
+       [:span.icon.is-small [:i.bi-chevron-down]]]]
+     [:div.dropdown-menu
+      [:div.dropdown-content
+       (forall [{:keys [db/id factory/title]} sorted-factories]
+         ^{:key id}
+         [:a.dropdown-item {:on-click (ui/link-dispatch [::select-factory id])
+                            :class [(when (= id selected-factory-id) "is-active")]}
+          title])
+       (when-not (empty? sorted-factories)
+         [:hr.dropdown-divider])
+       [:a.dropdown-item {:on-click (ui/link-dispatch [::modal/show ::new-factory])}
+        "Add a factory"]]]]))
 
 
 (defn- chooser-link
@@ -911,9 +1033,7 @@
   [factory-id]
   (let [{:factory/keys [mode]} @(rf/subscribe [::factory factory-id])
         continuous? (= mode :continuous)
-        input-totals @(rf/subscribe [::factory-input-totals factory-id])
-        local-totals @(rf/subscribe [::factory-local-totals factory-id])
-        output-totals @(rf/subscribe [::factory-output-totals factory-id])]
+        {:keys [input-totals local-totals output-totals]} (<sub [::factory-totals-grouped factory-id])]
     [:div {:style {:position "sticky"
                    :top "1rem"}}
       [:table.table.is-fullwidth.is-size-7.is-size-6-widescreen.has-text-right
@@ -925,12 +1045,12 @@
          [:th "Net"]
          [:th]]]
        [:tbody.is-family-monospace
-        (forall [[item-id {:keys [in]}] input-totals]
+        (forall [[item-id {:keys [in out]}] input-totals]
           ^{:key item-id}
           [:tr
            [:td.has-text-left (items/item-icon item-id)]
            [:td (format-total in)]
-           [:td]
+           [:td (some-> out format-total)]
            [:td (format-total (- in))]
            [:td (chooser-link factory-id item-id continuous?)]])
         (forall [[item-id {:keys [in out]}] local-totals]
@@ -953,19 +1073,25 @@
 
 
 (defn root []
-  (r/with-let [factory-id-sub (rf/subscribe [::selected-factory-id])]
-    (let [factory-id @factory-id-sub]
-      [:div
-       [:div.level
-        [:div.level-left
-         [:div.level-item [factory-title factory-id]]]
-        [:div.level-right
-         [:div.level-item [factory-select factory-id]]]]
-       (when factory-id
-         [:div.columns
-          [:div.column.is-three-quarters
-           [:div.box
-            [factory-table-view factory-id]]]
-           ;; [factory-jobs factory-id]]
-          [:div.column.is-one-quarter
-           [factory-totals factory-id]]])])))
+  (let [factory-id (<sub [::selected-factory-id])]
+    [:div
+     [:div.level
+      [:div.level-left
+       [:div.level-item [factory-title factory-id]]]
+      [:div.level-right
+       [:div.level-item [factory-select factory-id]]]]
+     (when factory-id
+       [:div.columns
+        [:div.column.is-three-quarters
+         [:div.box
+          [factory-table-view factory-id]]
+         (when-not (<sub [::graph-sorted-job-ids factory-id])
+           [:div.message.is-warning
+            [:div.message-body
+             "The jobs in this factory can't be ordered by dependencies. This
+             is generally caused by cycles in the production line, which you
+             should be able to resolve by "
+             [:a {:on-click (ui/link-dispatch [::select-forced-inputs factory-id])} "adding"]
+             " some designated input items."]])]
+        [:div.column.is-one-quarter
+         [factory-totals factory-id]]])]))

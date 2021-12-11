@@ -8,7 +8,8 @@
   re-posh/re-posh {:mvn/version "0.3.3"}
   fork/fork {:mvn/version "2.4.2"}
 
-  com.taoensso/encore {:mvn/version "3.20.0"}}
+  com.taoensso/encore {:mvn/version "3.20.0"}
+  aysylu/loom {:mvn/version "1.0.2"}}
 
  :paths ["src"]
 

@@ -3,7 +3,7 @@
 if test -n "$(git status --porcelain)"; then
     git status
     echo
-    echo >&2 'Can only release from a clean repository.'
+    echo >&2 'Can only release from a clean working directory.'
     exit 1
 fi
 

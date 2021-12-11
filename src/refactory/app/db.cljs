@@ -43,6 +43,9 @@
                    :app/default "New Factory"}
    :factory/mode {:app/kind :keyword
                   :app/default :continuous}
+   ;; Zero or more item-ids that are forced to be considered inputs.
+   :factory/inputs {:db/cardinality :db.cardinality/many
+                    :app/kind :string}
    :factory/jobs {:db/valueType :db.type/ref
                   :db/cardinality :db.cardinality/many
                   :db/isComponent true}
@@ -132,6 +135,11 @@
 (defmethod decode-attr :factory/mode
   [value _]
   (#{:continuous :fixed} value))
+
+(defmethod decode-attr :factory/inputs
+  [value _]
+  (when (game/id->item value)
+    value))
 
 (defmethod decode-attr :job/recipe-id
   [value _]
