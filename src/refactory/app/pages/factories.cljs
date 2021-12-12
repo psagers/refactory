@@ -1072,6 +1072,39 @@
            [:td (when continuous? (chooser-link factory-id item-id continuous?))]])]]]))
 
 
+(defn- factory
+  [factory-id]
+  [:div.columns
+   [:div.column.is-three-quarters
+    [:div.box
+     [factory-table-view factory-id]]
+    (when-not (<sub [::graph-sorted-job-ids factory-id])
+      [:div.message.is-warning
+       [:div.message-body
+        "The jobs in this factory can't be ordered by dependencies. This
+             is generally caused by cycles in the production line, which you
+             should be able to resolve by "
+        [:a {:on-click (ui/link-dispatch [::select-forced-inputs factory-id])} "adding"]
+        " some designated input items."]])]
+   [:div.column.is-one-quarter
+    [factory-totals factory-id]]])
+
+
+(defn- getting-started
+  []
+  [:section.section
+   [:p.block.is-size-5 "Welcome to Refactory."]
+   [:p.block.is-size-5
+    "This page is for modeling factories with different sets of recipes and
+    builders. If you want to jump right in, "
+    [:a {:on-click (ui/link-dispatch [::modal/show ::new-factory])}
+     "create your first factory"]
+    " and start adding jobs. Or head over to "
+    [:a.has-text-dark {:on-click (ui/link-dispatch [::pages/switch-to :help])}
+     [:span.icon [:i.bi-question-circle]]]
+    " for more information."]])
+
+
 (defn root []
   (let [factory-id (<sub [::selected-factory-id])]
     [:div
@@ -1080,18 +1113,6 @@
        [:div.level-item [factory-title factory-id]]]
       [:div.level-right
        [:div.level-item [factory-select factory-id]]]]
-     (when factory-id
-       [:div.columns
-        [:div.column.is-three-quarters
-         [:div.box
-          [factory-table-view factory-id]]
-         (when-not (<sub [::graph-sorted-job-ids factory-id])
-           [:div.message.is-warning
-            [:div.message-body
-             "The jobs in this factory can't be ordered by dependencies. This
-             is generally caused by cycles in the production line, which you
-             should be able to resolve by "
-             [:a {:on-click (ui/link-dispatch [::select-forced-inputs factory-id])} "adding"]
-             " some designated input items."]])]
-        [:div.column.is-one-quarter
-         [factory-totals factory-id]]])]))
+     (if factory-id
+       [factory factory-id]
+       [getting-started])]))

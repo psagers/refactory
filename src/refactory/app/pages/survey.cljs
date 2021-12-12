@@ -1,12 +1,14 @@
 (ns refactory.app.pages.survey
   (:require [clojure.set :as set]
             [datascript.core :as ds]
-            [reagent.core :as r]
-            [reagent.ratom :as ratom]
             [re-frame.core :as rf]
             [re-posh.core :as rp]
+            [reagent.core :as r]
+            [reagent.ratom :as ratom]
             [refactory.app.db :as db]
             [refactory.app.game :as game]
+            [refactory.app.pages :as pages]
+            [refactory.app.ui :as ui]
             [refactory.app.ui.items :as items]
             [refactory.app.ui.recipes :as recipes]
             [refactory.app.util :refer [<sub forall]]))
@@ -187,30 +189,40 @@
 
 (defn- results-table
   []
-  (let [results @(rf/subscribe [::buildable-recipe-ids-by-hop])
-        badge-mode @(rf/subscribe [::badge-mode])]
-    (when (seq results)
-      [:table.table.is-fullwidth.has-text-left
-       [:thead
+  (let [results (<sub [::buildable-recipe-ids-by-hop])
+        badge-mode (<sub [::badge-mode])]
+    [:table.table.is-fullwidth.has-text-left
+     [:thead
+      [:tr
+       [:th
+        [:span.mr-5 "Recipe"]
+        [:div.select.is-small
+         [:select {:value (name (or badge-mode default-badge-mode))
+                   :on-change #(rf/dispatch [::set-badge-mode (-> % .-target .-value)])}
+          [:option {:value "continuous"} "Per minute"]
+          [:option {:value "fixed"} "Per build"]]]]
+       [:th "Hops"]]]
+     [:tbody
+      (forall [[recipe-id hops] results]
+        ^{:key recipe-id}
         [:tr
-         [:th
-          [:span.mr-5 "Recipe"]
-          [:div.select.is-small
-           [:select {:value (name (or badge-mode default-badge-mode))
-                     :on-change #(rf/dispatch [::set-badge-mode (-> % .-target .-value)])}
-            [:option {:value "continuous"} "Per minute"]
-            [:option {:value "fixed"} "Per build"]]]]
-         [:th "Hops"]]]
-       [:tbody
-        (forall [[recipe-id hops] results]
-          ^{:key recipe-id}
-          [:tr
-           [:td (recipes/recipe-io recipe-id {:per-minute? (= badge-mode :continuous)})]
-           [:td hops]])]
-       [:tfoot
-        [:tr
-         [:th]
-         [:th]]]])))
+         [:td (recipes/recipe-io recipe-id {:per-minute? (= badge-mode :continuous)})]
+         [:td hops]])]
+     [:tfoot
+      [:tr
+       [:th]
+       [:th]]]]))
+
+
+(defn- getting-started
+  []
+  [:section.section
+   [:p.block.is-size-5
+    "This page is for exploring the recipes that can be built with different combinations
+    of inputs. If you want to jump right in, select your ingredients. Or head over to "
+    [:a.has-text-dark {:on-click (ui/link-dispatch [::pages/switch-to :help])}
+     [:span.icon [:i.bi-question-circle]]]
+    " for more information."]])
 
 
 (defn root
@@ -226,4 +238,6 @@
                                                       :on-success [::set-ingredients]}])}
       "Select ingredients"]]]
    [:div.column
-    [results-table]]])
+    (if (seq (<sub [::buildable-recipe-ids-by-hop]))
+      [results-table]
+      [getting-started])]])

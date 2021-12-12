@@ -1,13 +1,22 @@
 # Refactory
 
 This is a small web application to help with designing factories in
-[Satisfactory](https://www.satisfactorygame.com/).
+[Satisfactory][]. It's deployed to https://refactory.ignorare.net.
 
 Game data is parsed from the Docs.json file distributed with the game (under
 CommunityResources), with icons extracted from FactoryGame-WindowsNoEditor.pak.
 The game data is preprocessed into a more usable form for the web application.
 
-This is a work in progress and is not yet deployed.
+
+## Status
+
+This is a minor hobby project. It's currently usable and may or may not acquire
+new features. I'll try to keep it up to date with new Satisfactory releases,
+assuming I'm available when they appear.
+
+I reserve the right to lose interest in this project or in Satisfactory at any
+time. The code is licensed under CC0, so by all means feel free to make your
+own modified version to suit your needs.
 
 
 ## Developing
@@ -23,6 +32,13 @@ ClojureScript and SCSS respectively. This will run two commands:
 
     clojure -M:dev:cljs watch app
     yarn run brunch watch
+
+Other useful scripts:
+
+    - **bin/lint-deps**: Run [clj-kondo][] on dependencies to populate the lint
+      cache.
+    - **bin/release**: Make a release build and stage it for deployment via
+      GitHub Pages.
 
 
 ## Game data
@@ -50,12 +66,14 @@ output a list of all of the icons we'll need. Normally you would run:
 To get an rsync include-file. Then you can use rsync to pull just the icons we
 need from the images you extracted above.
 
-    rsync -rdmv --include-from icons.txt path/to/Game app/assets/img/ 
+    rsync -rdmv --include-from icons.txt path/to/Game app/assets/img/
 
 
+[clj-kondo]: https://github.com/clj-kondo/clj-kondo
 [ClojureScript]: https://clojurescript.org/
 [Clojure]: https://clojure.org/
-[Extracting UI icons]: https://satisfactory.fandom.com/wiki/Tutorial:Extracting_UI_icons 
+[Extracting UI icons]: https://satisfactory.fandom.com/wiki/Tutorial:Extracting_UI_icons
 [brunch]: https://brunch.io/
+[Satisfactory]: https://www.satisfactorygame.com/
 [shadow-cljs]: https://github.com/thheller/shadow-cljs
 [yarn]: https://yarnpkg.com/

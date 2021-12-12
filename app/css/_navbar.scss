@@ -1,0 +1,5 @@
+.navbar-item.has-dropdown .navbar-link.is-loading::after {
+  @include loader;
+  border-color: transparent transparent $grey-light $grey-light;
+  margin-left: 0.5rem;
+}

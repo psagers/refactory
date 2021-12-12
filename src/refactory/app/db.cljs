@@ -257,7 +257,7 @@
   (ds/reset-conn! @re-posh.db/store db))
 
 
-(def save-soon (debounce #(rf/dispatch [::save]) 2500))
+(def save-soon (debounce #(rf/dispatch [::save]) 1500))
 
 
 (rf/reg-event-fx
