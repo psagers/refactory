@@ -14,7 +14,7 @@ clojure -M:release:cljs release app
 
 # Copy it to the root of gh-pages.
 git switch gh-pages
-cp -R public/ ./
+rsync -a public/ ./
 git add -A
 
 # Display the results. If it looks good, check in and push.
