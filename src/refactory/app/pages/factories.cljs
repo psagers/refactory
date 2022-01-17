@@ -1029,6 +1029,10 @@
    [:span.icon [:i.bi-plus-circle.is-small]]])
 
 
+;; nil-safe subtraction.
+(def safe-net (fnil - 0 0))
+
+
 (defn- factory-totals
   [factory-id]
   (let [{:factory/keys [mode]} @(rf/subscribe [::factory factory-id])
@@ -1051,10 +1055,10 @@
            [:td.has-text-left (items/item-icon item-id)]
            [:td (format-total in)]
            [:td (some-> out format-total)]
-           [:td (format-total (- in))]
+           [:td (format-total (safe-net out in))]
            [:td (chooser-link factory-id item-id continuous?)]])
         (forall [[item-id {:keys [in out]}] local-totals]
-          (let [net (- out in)]
+          (let [net (safe-net out in)]
             ^{:key item-id}
             [:tr
              [:td.has-text-left (items/item-icon item-id)]
