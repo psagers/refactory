@@ -1,2 +1,6 @@
 /node_modules/
 /public/
+
+/.clj-kondo/.cache/
+/.cpcache/
+/.shadow-cljs/
